@@ -1,0 +1,514 @@
+---
+title: "GO_cluster"
+author: "Luise A. Seeker"
+date: "08/11/2021"
+output: html_document
+---
+# introduction
+
+I tested GSEA and gene ontology both for molecular functions and biological 
+pathways and different visualisations. In general GO works better for my data
+than GSEA so therefore in later versions of this document, there may be no 
+code for GSEA any more. 
+
+
+```{r}
+library(here)
+library(tibble)
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(EnhancedVolcano)
+library(ggsci)
+
+#GO & GSEA
+
+
+library(biomaRt)
+library(org.Hs.eg.db)
+library(ReactomePA)
+library(msigdbr)
+library(fgsea)
+library(NMF)
+library(ggupset)
+library(clusterProfiler)
+library(enrichplot)
+library(stringr)
+
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+# Read in data
+
+```{r}
+
+nad_ol <- readRDS(here("data", 
+                       "single_nuc_data", 
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+
+
+Idents(nad_ol) <- "ol_clusters_named" 
+opcs <- subset(nad_ol, idents = c("OPC_A", "OPC_B"))
+
+Idents(opcs) <- "Tissue" 
+
+csc_ba4_mark <- FindMarkers(opcs, ident.1 = "CSC",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.2,
+                          test.use = "MAST")
+```
+```{r, fig.height = 4, fig.width = 4}
+
+bool_hox<- str_detect(rownames(csc_ba4_mark), pattern = "^HOX", negate = FALSE)
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    title = 'CSC OPCs vs. BA4 OPCs',
+    pCutoff = 0.05,
+    FCcutoff = 0.2,
+    pointSize = 3.0,
+    labSize = 6.0,
+    col=c(mycoloursP),
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    selectLab = c("FOXG1","HOXB3", "NELL1",
+                  "L3MBTL4", "LRRC7",
+                  "TMEM196", 
+                  "DACH2",
+                  "MYT1L", "CACNG5",
+                  "SEMA3D", "PAX3", 
+                  "CDH8",
+                  "EBF1", 
+                  "HS3ST1", "PDZRN3"))
+
+```
+
+
+# Prepare hallmarks for GSEA and gene sets
+
+```{r, eval = FALSE}
+
+
+hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+geneset <- hallmark %>% split(x = .$gene_symbol, f = .$gs_name)
+
+
+```
+
+# 1) KEGG
+
+```{r}
+
+
+
+ba4 <- subset(csc_ba4_mark, csc_ba4_mark$avg_log2FC < 0)
+csc <- subset(csc_ba4_mark, csc_ba4_mark$avg_log2FC >0)
+
+
+# Prepare marts to convert to entrez
+listMarts()
+ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl",
+                      host = "www.ensembl.org")
+    
+    
+listDatasets(ensembl)
+attributes = listAttributes(ensembl)
+
+```
+
+
+BA4 vs CSC OPCs
+```{r}
+ 
+genes_ba4 <- rownames(ba4)
+  
+  
+# convert to ENTREZID
+genes_ent <- bitr(genes_ba4, fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Hs.eg.db)
+  
+
+
+# Tissue
+ck_kegg_tissue <- compareCluster(geneCluster = genes_ent, fun = enrichKEGG)
+ck_kegg_tissue <- setReadable(ck_kegg_tissue, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
+head(ck_kegg_tissue) 
+
+dotplot(ck_kegg_tissue)
+```
+
+CSC vs BA4 OPCs
+```{r}
+
+
+genes_csc <- rownames(csc)
+  
+  
+# convert to ENTREZID
+genes_ent <- bitr(genes_csc, fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Hs.eg.db)
+  
+
+
+# Tissue
+ck_kegg_tissue <- compareCluster(geneCluster = genes_ent, fun = enrichKEGG)
+ck_kegg_tissue <- setReadable(ck_kegg_tissue, OrgDb = org.Hs.eg.db, keyType="ENTREZID")
+head(ck_kegg_tissue) 
+
+dotplot(ck_kegg_tissue)
+
+
+
+```
+
+
+# 2) Cell Profiler
+
+BA4 vs. CSC
+
+```{r}
+
+fil_data_ba4 <- subset(ba4, ba4$p_val_adj < 0.05)
+    
+genes <- rownames(fil_data_ba4)
+
+fil_data_ba4$abs_avg_log2FC <- abs(fil_data_ba4$avg_log2FC)
+fil_data_ba4$gene <- rownames(fil_data_ba4)
+  
+# Prepare input data
+ranks <- fil_data_ba4 %>% dplyr::select(gene, abs_avg_log2FC)
+ranks <- deframe(ranks)
+
+#RUN GO using clusterProfiler
+fil_data_ba4$Gene <- fil_data_ba4$gene
+#remove any duplicates (sanity check for me)
+genemodulesGO <- fil_data_ba4[!duplicated(fil_data_ba4$Gene),]
+    
+Biomart_gencode_ensembl84_biotypes <- getBM(attributes=c("ensembl_gene_id",
+                                                             "entrezgene_id",
+                                                             "gene_biotype",
+                                                             "hgnc_symbol"), 
+                                                filters = "hgnc_symbol", 
+                                                values = fil_data_ba4$Gene, 
+                                                mart = ensembl,
+                         uniqueRows = FALSE)
+    
+    
+Biomart_gencode_ensembl84_biotypes[, 'gene_biotype'] <- 
+      as.factor(Biomart_gencode_ensembl84_biotypes[,'gene_biotype'])
+    
+
+biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+                                  %in% rownames(opcs@assays$RNA))
+      
+entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+                        %in% rownames(opcs@assays$RNA))
+   
+entrezmatched <- entrezID[match(genemodulesGO$Gene,entrezID$hgnc_symbol),]
+  
+    #you might need to remove NAs
+entrezmatched <- entrezmatched[! apply(entrezmatched[,c(1,3)], 1,function (x) anyNA(x)),]
+allLLIDs <- entrezmatched$entrezgene
+    
+modulesReactome <- enrichPathway(gene=as.character(allLLIDs),organism="human",
+                                        pvalueCutoff=0.01,
+                                        qvalueCutoff = 0.3,
+                                        pAdjustMethod = "none", 
+                                        readable=T)
+    
+    
+  
+    
+
+dotplot(modulesReactome, showCategory=20)
+
+```
+
+
+```{r}
+x2 <- pairwise_termsim(modulesReactome) 
+emapplot(x2)
+        
+```
+
+```{r}
+
+ent_uni <- rownames(opcs@assays$RNA)
+ent_uni_entrez <- bitr(ent_uni, fromType = "SYMBOL",
+                       toType = "ENTREZID",
+                       OrgDb = org.Hs.eg.db)
+         
+ent_uni <- ent_uni_entrez$ENTREZID
+         
+# Molecular function
+         
+go_mf <- enrichGO(gene  = as.character(allLLIDs),
+                universe      = ent_uni,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "MF",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1,
+                readable      = TRUE)
+          
+          
+         
+          
+dotplot(go_mf, showCategory = 15)
+
+```
+
+
+```{r}
+ego <- enrichGO(gene  = as.character(allLLIDs),
+                OrgDb = org.Hs.eg.db,
+                ont = "BP",
+                universe = ent_uni )
+#dotplot(ego, showCategory=20)
+```
+
+ego has nrow of 0
+
+
+```{r}
+
+## convert gene ID to Symbol
+#edox <- setReadable(ego, 'org.Hs.eg.db', 'ENTREZID')
+#cnetplot(edox, foldChange=ranks, circular = TRUE, 
+#                       colorEdge = TRUE)
+```
+
+
+```{r}
+#edox2 <- enrichplot::pairwise_termsim(edox)
+#treeplot(edox2)
+```
+
+```{r}
+#u_plot <- upsetplot(ego)
+```
+
+```{r}
+#heatplot(edox, foldChange=ranks, showCategory=5)
+```
+
+```{r}
+edox_mf <- setReadable(go_mf, 'org.Hs.eg.db', 'ENTREZID')
+edox2_mf <- pairwise_termsim(edox_mf)
+treeplot(edox2_mf)
+  
+```
+
+```{r}
+heatplot(edox2_mf, foldChange=ranks, showCategory=5)
+```
+
+
+CSC vs NA4 OPCs
+```{r}
+
+fil_data <- subset(csc, csc$p_val_adj < 0.05)
+    
+genes <- rownames(fil_data)
+
+fil_data$abs_avg_log2FC <- abs(fil_data$avg_log2FC)
+fil_data$gene <- rownames(fil_data)
+  
+# Prepare input data
+ranks <- fil_data %>% dplyr::select(gene, abs_avg_log2FC)
+ranks <- deframe(ranks)
+
+#RUN GO using clusterProfiler
+fil_data$Gene <- fil_data$gene
+#remove any duplicates (sanity check for me)
+genemodulesGO <- fil_data[!duplicated(fil_data$Gene),]
+    
+Biomart_gencode_ensembl84_biotypes <- getBM(attributes=c("ensembl_gene_id",
+                                                             "entrezgene_id",
+                                                             "gene_biotype",
+                                                             "hgnc_symbol"), 
+                                                filters = "hgnc_symbol", 
+                                                values = fil_data$Gene, 
+                                                mart = ensembl,
+                         uniqueRows = FALSE)
+    
+    
+Biomart_gencode_ensembl84_biotypes[, 'gene_biotype'] <- 
+      as.factor(Biomart_gencode_ensembl84_biotypes[,'gene_biotype'])
+    
+    #Filter genes
+    #biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+    #                              %in% nad_ol@assays$RNA@var.features)
+    #entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+    #                    %in% nad_ol@assays$RNA@var.features)
+
+   # if(nrow(biotype_all_dataset) == 0){
+biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+                                  %in% rownames(opcs@assays$RNA))
+      
+entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+                        %in% rownames(opcs@assays$RNA))
+   # }
+    
+entrezmatched <- entrezID[match(genemodulesGO$Gene,entrezID$hgnc_symbol),]
+  
+    #you might need to remove NAs
+entrezmatched <- entrezmatched[! apply(entrezmatched[,c(1,3)], 1,function (x) anyNA(x)),]
+allLLIDs <- entrezmatched$entrezgene
+    
+modulesReactome <- enrichPathway(gene=as.character(allLLIDs),organism="human",
+                                        pvalueCutoff=0.01,
+                                        qvalueCutoff = 0.3,
+                                        pAdjustMethod = "none", 
+                                        readable=T)
+    
+    
+  
+```
+
+```{r, fig.height =5}
+
+dotplot(modulesReactome, showCategory=20)
+
+```
+
+
+```{r}
+x2 <- pairwise_termsim(modulesReactome) 
+emapplot(x2)
+        
+```
+
+```{r}
+
+ent_uni <- rownames(opcs@assays$RNA)
+ent_uni_entrez <- bitr(ent_uni, fromType = "SYMBOL",
+                       toType = "ENTREZID",
+                       OrgDb = org.Hs.eg.db)
+         
+ent_uni <- ent_uni_entrez$ENTREZID
+         
+# Molecular function
+         
+go_mf <- enrichGO(gene  = as.character(allLLIDs),
+                universe      = ent_uni,
+                OrgDb         = org.Hs.eg.db,
+                ont           = "MF",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 1,
+                qvalueCutoff  = 1,
+                readable      = TRUE)
+          
+          
+         
+          
+dotplot(go_mf, showCategory = 15)
+
+```
+
+Biological process
+```{r}
+ego <- enrichGO(gene  = as.character(allLLIDs),
+                OrgDb = org.Hs.eg.db,
+                ont = "BP",
+                universe = ent_uni )
+dotplot(ego, showCategory=20)
+```
+
+
+```{r}
+
+## convert gene ID to Symbol
+edox <- setReadable(ego, 'org.Hs.eg.db', 'ENTREZID')
+cnetplot(edox, foldChange=ranks, circular = TRUE, 
+                       colorEdge = TRUE)
+```
+
+
+```{r}
+edox2 <- enrichplot::pairwise_termsim(edox)
+enrichplot::treeplot(edox2, showCategory = 25,
+                     nWords = 10,
+                     nCluster = 6,
+                     offset = 16.5,
+                     offset_tiplab = 0.5,
+                     group_color = c("cadetblue",
+                                     "cyan4",
+                                     "darkgoldenrod",
+                                     "cornflowerblue",
+                                     "aquamarine4",
+                                     "azure4"))
+```
+
+```{r}
+u_plot <- upsetplot(ego)
+```
+
+```{r}
+heatplot(edox, foldChange=ranks, showCategory=5)
+```
+
+```{r}
+edox_mf <- setReadable(go_mf, 'org.Hs.eg.db', 'ENTREZID')
+edox2_mf <- pairwise_termsim(edox_mf)
+treeplot(edox2_mf)
+  
+```
+
+
+```{r}
+edox2_df <- edox2@result
+edox2_df_fil <- subset(edox2_df, edox2_df$p.adjust < 0.05)
+```
+
+
+
+
+
+
+
+```{r}
+opcs[["percent.rb"]] <- PercentageFeatureSet(opcs, pattern = "^RP[SL]")
+
+
+VlnPlot(opcs, 
+        features = c("nFeature_RNA",
+                     "nCount_RNA",
+                     "total_percent_mito",
+                     "percent.rb"),
+        ncol = 4,pt.size = 0.1) & 
+  theme(plot.title = element_text(size=10))
+
+```
+
+
+
+# Session Info
+```{r}
+sessionInfo()
+
+```
+
+

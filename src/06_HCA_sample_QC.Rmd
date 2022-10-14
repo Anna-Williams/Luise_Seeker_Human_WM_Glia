@@ -1,0 +1,537 @@
+---
+title: "06_HCA_sample_QC"
+author: "Luise A. Seeker"
+date: "05/02/2021"
+output: html_document
+---
+
+# Sample quality control
+
+The purpose of this script is to test sample quality and flag those samples
+for removal that we do not wish to keep for downstream analyses.
+
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library(scales)
+library(RCurl)
+library(AnnotationHub)
+library(dplyr)
+
+```
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+```{r}
+
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_seur_norm_raw.RDS")
+
+```
+
+
+```{r}
+
+# this is plotting percent of mito genes that was etimated before spliced and 
+# unspliced was merged
+Idents(seur_comb) <- "Tissue"
+
+VlnPlot(seur_comb, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), 
+        ncol = 3, pt.size = 0.1, cols = mycoloursP[3:40])
+
+
+VlnPlot(seur_comb, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), 
+        ncol = 3, pt.size = 0, cols = mycoloursP[3:40])
+```
+
+
+
+```{r, fig.width=5, fig.height=3, fig.fullwidth=TRUE}
+
+plot1 <- FeatureScatter(seur_comb, feature1 = "nCount_RNA", 
+                        feature2 = "percent.mt", cols = mycoloursP[3:40])
+plot2 <- FeatureScatter(seur_comb, feature1 = "nCount_RNA", 
+                        feature2 = "nFeature_RNA", cols = mycoloursP[3:40])
+plot1 + plot2
+
+```
+
+
+The mitochondrial percentage was based on spliced counts only. After adding the
+unspliced that don't contain mitochondrial genes this percentage should go down. 
+For some reason the standard Seurat way of doing this gives wrong results. 
+So here I do it manually:
+
+```{r}
+
+df <- data.frame(genes = rownames(seur_comb))
+df[grep("^MT-", df$genes),]
+
+
+
+
+mt_genes <- rownames(seur_comb)[grep("^MT-",rownames(seur_comb))]
+C <- GetAssayData(object = seur_comb, slot = "counts")
+
+percent_mito <- colSums(C[mt_genes,])/Matrix::colSums(C)*100
+seur_comb <- AddMetaData(seur_comb, percent_mito, col.name = "total_percent_mito")
+
+
+
+rb_genes <- rownames(seur_comb)[grep("^RP[SL]",rownames(seur_comb))]
+percent_ribo <- colSums(C[rb_genes,])/Matrix::colSums(C)*100
+seur_comb <- AddMetaData(seur_comb, percent_ribo, col.name = "percent_ribo")
+
+
+
+VlnPlot(seur_comb, features = "total_percent_mito", pt.size = 0, cols = 
+          mycoloursP) + NoLegend()
+```
+
+
+```{r}
+
+VlnPlot(seur_comb, features = "percent_ribo", pt.size = 0, cols = mycoloursP) + 
+  NoLegend()
+
+
+
+test <- PercentageFeatureSet(object = seur_comb, pattern = "^MT-")
+```
+
+I can't find convincing literature on filtering based on ribosomal genes. So
+I do not filter here.
+
+```{r}
+Idents(seur_comb) <- "Tissue"
+plot1 <- FeatureScatter(seur_comb, feature1 = "nCount_RNA", 
+                        feature2 = "total_percent_mito", 
+                        cols = mycoloursP[3:40])
+plot2 <- FeatureScatter(seur_comb, feature1 = "nCount_RNA", 
+                        feature2 = "nFeature_RNA", cols = mycoloursP[3:40])
+plot1 + plot2
+
+```
+
+Some more quality checks:
+```{r}
+summaryStats <- as.data.frame(tapply(seur_comb$nCount_RNA, 
+                                   seur_comb@meta.data$ProcessNumber, mean))
+names(summaryStats) <- "MeanUMI"
+summaryStats$ProcessNumber <- rownames(summaryStats)
+rownames(summaryStats) <- NULL
+
+medianUMI<-as.data.frame(tapply(seur_comb$nCount_RNA, 
+                                seur_comb@meta.data$ProcessNumber, median))
+names(medianUMI) <- "MedianUMI"
+
+summaryStats$MedianUMI <- medianUMI$MedianUMI
+
+
+meanFeatures <- as.data.frame(tapply(seur_comb$nFeature_RNA, 
+                                     seur_comb@meta.data$ProcessNumber, mean))
+names(meanFeatures) <- "meanFeatures"
+
+summaryStats$meanFeatures <- meanFeatures$meanFeatures
+
+
+medianFeatures <- as.data.frame(tapply(seur_comb$nFeature_RNA, 
+                                       seur_comb@meta.data$ProcessNumber, 
+                                       median))
+
+names(medianFeatures) <- "medianFeatures"
+
+summaryStats$medianFeatures <- medianFeatures$medianFeatures
+
+
+maxUMIs <- as.data.frame(tapply(seur_comb$nCount_RNA, 
+                                seur_comb@meta.data$ProcessNumber, max))
+names(maxUMIs)<-"maxUMI"
+
+
+minUMI <- as.data.frame(tapply(seur_comb$nCount_RNA, 
+                               seur_comb@meta.data$ProcessNumber, min))
+names(minUMI) <- "minUMI"
+
+maxFeatures <- as.data.frame(tapply(seur_comb$nFeature_RNA, 
+                                    seur_comb@meta.data$ProcessNumber, max))
+names(maxFeatures) <- "maxFeatures"
+
+minFeatures <- as.data.frame(tapply(seur_comb$nFeature_RNA, 
+                                    seur_comb@meta.data$ProcessNumber, 
+                                    min))
+names(minFeatures)<-"minFeatures"
+
+
+summaryStats$maxUMIs<-maxUMIs$maxUMI
+summaryStats$minUMIs<-minUMI$minUMI
+summaryStats$minFeatures<-minFeatures$minFeatures
+summaryStats$maxFeatures<-maxFeatures$maxFeatures
+
+
+hist(summaryStats$MeanUMI, col = mycoloursP[3], breaks = 10)
+hist(summaryStats$MedianUMI, col = mycoloursP[4], breaks = 10)
+hist(summaryStats$medianFeatures, col = mycoloursP[5], breaks = 10)
+hist(summaryStats$meanFeatures, col = mycoloursP[6],breaks = 10)
+hist(summaryStats$minFeatures, col = mycoloursP[7],breaks = 10)
+hist(summaryStats$maxFeatures, col = mycoloursP[8],breaks = 10)
+hist(summaryStats$minUMIs, col = mycoloursP[9],breaks = 10)
+hist(summaryStats$maxUMIs, col = mycoloursP[10],breaks = 10)
+
+```
+
+# added later when more filtering criteria were known:
+
+```{r, eval = F}
+qc_dat <- data.frame(ProcessNumber = seur_comb@meta.data$process_number,
+                    QC = seur_comb@meta.data$sample_qc_failed)
+qc_dat <- qc_dat[!(duplicated(qc_dat$ProcessNumber)),]
+
+summary_stats <- merge(summaryStats, qc_dat, by = "ProcessNumber")
+summary_stats$QC_all <- ifelse(summary_stats$QC == "TRUE", "exclude", "include")
+
+
+rin <- data.frame(ProcessNumber = seur_comb@meta.data$process_number,
+                    RIN = seur_comb@meta.data$RIN)
+
+rin <- rin[!(duplicated(rin$ProcessNumber)),]
+
+
+
+summary_stats <- merge(summary_stats, rin, by = "ProcessNumber")
+
+summary_stats$RIN <- as.numeric(summary_stats$RIN)
+
+
+
+cor<-cor.test(summary_stats$RIN, summary_stats$MeanUMI)
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+
+ggplot(summary_stats, aes(x=MeanUMI, y= RIN, colour= QC_all))+ 
+  geom_point(size = 3) + xlab("MeanUMI") + 
+  ylab ("RIN") + theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) 
+
+# not all samples have RIN values, RNA isolation kits were impossible to obtain 
+# during the COVID19 pandemic
+```
+
+
+
+
+```{r}
+
+
+
+summaryStats$QC_UMI<-ifelse(summaryStats$MeanUMI < 500, "exclude", 
+                            "include")
+
+cor<-cor.test(summaryStats$MeanUMI, summaryStats$MedianUMI)
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+
+ggplot(summaryStats, aes(x=MeanUMI, y= MedianUMI, colour= QC_UMI))+ 
+  geom_point(size = 3) + xlab("Mean UMI") + 
+  ylab ("Median UMI") + theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) +
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 650, y = 1800, label = 
+             paste("r = ", r, "  p ", p, sep=""),
+           size = 8)+
+  xlim(0, max(summaryStats$MeanUMI) + 50)
+
+
+ggplot(summaryStats, aes(x=MeanUMI, y= MedianUMI, colour= QC_UMI))+ 
+  geom_point(size = 3) + xlab("Mean UMI") + 
+  ylab ("Median UMI") + theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) +
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 850, y = 1800, label = 
+             paste("r = ", r, "  p ", p, sep=""),
+           size = 7)+
+  xlim(0, max(summaryStats$MeanUMI) + 50) +
+  theme(legend.position = "none")
+  
+
+
+
+
+```
+
+
+
+
+
+  
+```{r}
+
+cor <- cor.test(summaryStats$meanFeatures, summaryStats$medianFeatures)
+r <- round(cor$estimate, 2)
+p <- round(cor$p.value, 3)
+p <- ifelse(p == 0, p <- "< 0.001", p <- paste( " = " , p, sep=""))
+
+ggplot(summaryStats, aes(x=meanFeatures, 
+                         y= medianFeatures, 
+                         colour= QC_UMI))+geom_point(size = 3) + 
+  xlab("Mean features") + 
+  ylab ("Median features") + 
+  theme_classic() + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 400, y = 600, label = 
+             paste("r = ", r, "  p ", p, sep=""))
+
+
+ggplot(summaryStats, aes(x=meanFeatures, 
+                         y= medianFeatures, 
+                         colour= QC_UMI))+geom_point(size = 3) + 
+  xlab("Mean features") + 
+  ylab ("Median features") + 
+  theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 700, y = 1200, label = 
+             paste("r = ", r, "  p ", p, sep=""),
+           size = 7) +
+  theme(legend.position = "none")
+  
+
+
+
+
+
+
+```
+
+
+```{r}
+cor <- cor.test(summaryStats$MedianUMI, summaryStats$medianFeatures)
+r <- round(cor$estimate, 2)
+p <- round(cor$p.value, 3)
+p <- ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+ggplot(summaryStats, aes(x=MedianUMI, y= medianFeatures, colour= QC_UMI)) +
+  geom_point(size = 3)+ xlab("Median UMI") + 
+  ylab ("Median features") + 
+  theme_classic() + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T)+ 
+  annotate("text", x = 400, y = 600, label = paste("r = ", r, "  p ", p, sep=""))
+
+ggplot(summaryStats, aes(x=MedianUMI, y= medianFeatures, colour= QC_UMI)) +
+  geom_point(size = 3)+ xlab("Median UMI") + 
+  ylab ("Median features") + 
+  theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T)+ 
+  annotate("text", x = 800, y = 1250, label = paste("r = ", r, "  p ", p, sep=""),
+           size = 7)+
+  theme(legend.position = "none")
+
+  
+
+```
+
+
+```{r}
+
+cor<-cor.test(summaryStats$MeanUMI, summaryStats$meanFeatures)
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+
+ggplot(summaryStats, aes(x=MeanUMI, 
+                         y= meanFeatures, 
+                         colour= QC_UMI)) + 
+  geom_point(size = 3) + 
+  xlab("Mean UMI") + 
+  ylab ("Mean features") + 
+  theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 600, y = 850, 
+           label = paste("r = ", r, "  p ", p, sep="",size = 7)) +
+  theme(legend.position = "none")
+
+
+ggplot(summaryStats, aes(x=MeanUMI, 
+                         y= meanFeatures, 
+                         colour= QC_UMI)) + 
+  geom_point(size = 3) + 
+  xlab("Mean UMI") + 
+  ylab ("Mean features") + 
+  theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  geom_smooth(method = "lm", se = T) + 
+  annotate("text", x = 1100, y = 1200, 
+           label = paste("r = ", r, "  p ", p, sep=""),
+           size = 7) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r}
+
+cor<-cor.test(summaryStats$minUMIs, summaryStats$maxUMIs)
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+ggplot(summaryStats, aes(x=minUMIs, 
+                         y= maxUMIs, 
+                         colour= QC_UMI)) + 
+  geom_point(size = 3)+ xlab("Min UMI") + 
+  ylab ("Max UMI") + 
+  theme_classic() + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  annotate("text", x = 250, y = 6000, 
+           label = paste("r = ", r, "  p ", p, sep=""))+ 
+  geom_smooth(method = "lm", se = F)
+
+
+```
+
+
+```{r}
+
+cor<-cor.test(summaryStats$minFeatures, summaryStats$maxFeatures)
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+ggplot(summaryStats, aes(x=minFeatures, 
+                         y= maxFeatures, 
+                         colour= QC_UMI)) + 
+  geom_point(size = 3) + 
+  xlab("Min Features") + 
+  ylab ("Max features") + 
+  theme_classic() + 
+  scale_color_manual(values = mycoloursP[16:17]) + 
+  annotate("text", x = 100, y = 4200, 
+           label = paste("r = ", r, "  p ", p, sep=""))
+
+
+```
+
+
+
+```{r}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/summary_stats_after_qc")
+write.csv(summaryStats,"/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/summary_stats_after_qc/sum_stats_after_qc.csv")
+          
+
+
+```
+
+
+```{r}
+sum_stats <- merge(seur_comb@meta.data, summaryStats, by = "ProcessNumber" )
+barcode_oder <- seur_comb@meta.data$Barcode
+sum_stats <- sum_stats[match(barcode_oder, sum_stats$Barcode),]
+head(sum_stats$Barcode == seur_comb@meta.data$Barcode)
+
+qc_umi_vector <- sum_stats$QC_UMI
+
+seur_comb@meta.data$QC_UMI <- qc_umi_vector
+
+
+extr_RIN <- sum_stats[!duplicated(sum_stats$process_number),]
+```
+
+```{r}
+extr_RIN <- subset(extr_RIN, extr_RIN$RINvalue != "NULL")
+
+cor<-cor.test(extr_RIN$MeanUMI, as.numeric(paste(extr_RIN$RIN)))
+r<-round(cor$estimate, 2)
+p<-round(cor$p.value, 3)
+p<-ifelse(p==0, p<- "< 0.001", p<-paste( " = " , p, sep=""))
+
+ggplot(extr_RIN, aes(x=MeanUMI, 
+                         y= RINvalue, 
+                         colour= QC_UMI)) + 
+  geom_point(size = 3)+ xlab("Mean UMI") + 
+  ylab ("RIN") + 
+  theme_classic(20) + 
+  scale_color_manual(values= mycoloursP[16:17]) + 
+  annotate("text", x = 1100, y = 27, 
+           label = paste("r = ", r, "  p ", p, sep=""),
+           size = 7) +
+  theme(legend.position = "none")
+
+
+
+```
+
+
+
+```{r}
+
+
+met_data<- seur_comb@meta.data
+d <- met_data %>% 
+  group_by(process_number) %>%
+  summarise(no_rows = length(process_number))
+
+met_data <- merge(met_data, d, by = "process_number")
+
+u_met_dat <- met_data[!duplicated(met_data$process_number),]
+
+
+u_met_dat <- subset(u_met_dat, u_met_dat$RIN != "NULL")
+
+ggplot(u_met_dat, aes(x = no_rows, y = RIN, 
+                      colour = QC_UMO)) + 
+  geom_point() + 
+  theme_classic(20) + 
+  xlab("Nuclei count") + 
+  scale_color_manual(values= mycoloursP[16:17])+
+  theme(legend.position = "none")
+
+```
+
+
+
+```{r}
+
+ggplot(u_met_dat, aes(x = no_rows, y = RIN, 
+                      colour = sample_qc_failed)) + 
+  geom_point() + 
+  theme_classic(20) + 
+  xlab("Nuclei count")+ 
+  scale_color_manual(values= c(mycoloursP[6], mycoloursP[5])) +
+  theme(legend.position = "none")
+
+
+```
+
+
+```{r}
+
+sessionInfo()
+
+```

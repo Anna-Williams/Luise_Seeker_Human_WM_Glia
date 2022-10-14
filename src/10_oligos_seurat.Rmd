@@ -1,0 +1,854 @@
+---
+title: "Oligodendroglia clustering"
+author: "Luise A. Seeker"
+date: "04/11/2020"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# Introduction
+
+The purpose of this script is to find variable genes, cluster the oligodendroglia
+dataset at different resolutions, find some rough markers for cluster
+stability/ purity that may help to decide which clusters to use, and find 
+marker genes for those clusters. 
+
+# Load libraries
+
+```{r, echo = F}
+
+library(Seurat)
+
+library(dplyr)
+library(viridis) 
+library(ggsci)
+library(scales)
+library(SingleCellExperiment)
+library(EnhancedVolcano)
+library(NMF)
+library(pheatmap)
+library(dendextend)
+library(limma)
+library(StatMeasures)
+library(ggplot2)
+library(ggdendro)
+library(zoo)
+library(clustree)
+library(philentropy)
+library(bluster)
+library(scclusteval)
+library(gtools)
+library(tidyr)
+
+#For monocle pseudotime:
+library(monocle3)
+library(SeuratWrappers)
+
+#GO & GSEA
+
+library(clusterProfiler)
+library(biomaRt)
+library(org.Hs.eg.db)
+library(ReactomePA)
+library(enrichplot)
+library(enrichplot)
+library(msigdbr)
+library(fgsea)
+```
+
+
+# Pick colour pallets
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+# Read in dataset
+
+```{r, echo = F}
+
+# Load the barcodes of oligos that Nadine identified:
+
+subs_barcodes <- read.csv('/Users/lseeker/Documents/Work/HumanCellAtlas/git_repos/Nadine_HCA/HCA_all_celltypes/outs/2021-03-16_oligos_and_opcs_barcodes.csv') 
+
+
+#nad_ol <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs.RDS")
+
+# load the object that I created (contains all cell types). I am going to subset
+# it for the cell Ids Nadine gave me so that I can keep some characteristics of 
+#my data
+
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/05_Annotated/allCelltypes/HCA_rough_annotated_all.RDS")
+
+#seur_comb$nad_ol <- ifelse(seur_comb@meta.data$Barcode %in% nad_ol@meta.data$Barcode, 
+#                           "oligo", "non-oligo")
+
+seur_comb$nad_ol <- ifelse(seur_comb@meta.data$Barcode %in% subs_barcodes$x, 
+                           "oligo", "non-oligo")
+
+DimPlot (seur_comb, group.by = "nad_ol", cols = mycoloursP)
+
+Idents(seur_comb) <- "nad_ol"
+
+nad_ol <- subset(seur_comb, ident = "oligo")
+
+
+```
+
+#Check QC
+
+```{r}
+
+Idents(nad_ol) <- "Tissue"
+VlnPlot(nad_ol, features = c("nFeature_RNA", 
+                             "nCount_RNA", 
+                             "total_percent_mito"))
+
+VlnPlot(nad_ol, features = c("nFeature_RNA", 
+                             "nCount_RNA", 
+                             "total_percent_mito"), 
+        pt.size = 0, 
+        cols = mycoloursP)
+
+```
+
+```{r}
+plot1 <- FeatureScatter(nad_ol, 
+                        feature1 = "nCount_RNA", 
+                        feature2 = "total_percent_mito", 
+                        cols = mycoloursP)
+
+plot2 <- FeatureScatter(nad_ol, 
+                        feature1 = "nCount_RNA", 
+                        feature2 = "nFeature_RNA", 
+                        cols = mycoloursP)
+plot1 + plot2
+
+
+```
+
+# Find variable features
+```{r}
+
+nad_ol <- FindVariableFeatures(nad_ol, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(nad_ol), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(nad_ol)
+plot2 <- LabelPoints(plot = plot1, 
+                     points = top10, 
+                     repel = TRUE)
+plot1 + plot2
+
+
+
+```
+
+# Scale data
+
+```{r}
+
+all_genes <- rownames(nad_ol)
+nad_ol <- ScaleData(nad_ol, features= all_genes)
+
+```
+
+# Linear dimensional reduction
+
+```{r}
+nad_ol <- RunPCA(nad_ol, features = VariableFeatures(object = nad_ol))
+ElbowPlot(nad_ol)
+
+```
+
+```{r}
+
+
+nad_ol <- FindNeighbors(nad_ol, dims = 1:10)
+
+# test different resolutions for clustering
+nad_ol <- FindClusters(nad_ol, resolution = c(0.01, 0.04, 0.05, 
+                                              seq(from = 0.1, to = 1, by = 0.1)))
+
+
+# non-linear reduction
+nad_ol <- RunUMAP(nad_ol, dims = 1:10)
+
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern, 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- mixedsort(res_names) 
+  plot_l <-list()
+  for(i in 1: length(res_names)){
+  pdf(paste0(save_dir, 
+               res_names[i], "_umap.pdf"), width=width, height=height)
+  dim_plot <- DimPlot(seur_obj, 
+                          reduction = "umap", 
+                          cols= plot_cols,
+                          group.by = res_names[i],
+                          label = clust_lab,
+                          label.size = label_size) + NoLegend()
+  print(dim_plot)
+  dev.off()
+  print(dim_plot)
+  }
+}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/diff_dim_pl")
+plot_list_func(seur_obj = nad_ol, 
+                          col_pattern = "RNA_snn_res.",
+                          plot_cols = mycoloursP[6:40],
+                          save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/diff_dim_pl/" )
+
+
+```
+
+```{r, fig.width = 8, fig.height = 1.5}
+
+FeaturePlot(nad_ol, features = c("SPARC", "SPARCL1", "RBFOX1", "OPALIN"), ncol = 4)
+
+```
+
+
+```{r, fig.width = 8, fig.height = 1.5}
+
+DimPlot(nad_ol, group.by = "Tissue", split.by = "Tissue")
+
+```
+
+
+# Marker genes for OPCs an oligodendrocytes
+
+```{r, fig.width = 8, fig.height = 1.5}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/feat_pl")
+
+pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/feat_pl/olig_OPCs.pdf", 
+    width=10, height=2)
+
+
+print(FeaturePlot(nad_ol, features = c("PDGFRA", "PCDH15", "PLP1", "CNP"), ncol = 4))
+
+dev.off()
+
+```
+
+
+
+# Try different cluster resolutions
+I am starting here with a resolution that is just large enough to differentiate
+between oligodendrocytes and OPCs. From there I increase it slowly and keep 
+resolutions that are associated with the appearance of a new cluster. I do this
+until I think I reached overclustering and still continue in 0.1 steps until a
+resolution of 1 is reached. I use cluster stability and purity measures below
+but althoguht they are useful to find the most stable clustering (which is without
+doubt the one differentiating between OPCs and more mature nuclei), it does 
+not find the clustering that is biologically most interesting. For this reason, 
+I test if for the last appearing cluster marker genes can be found. 
+
+Below it can be seen that some clusters are relatively stable (the OPALIN positive
+cluster, the SPARK positive cluster, the PAX3 and NELL1 positive OPC clusters),
+But that the clustering of the RBFOX1 positivfe majourity of the oligodendroglia 
+is variable in the number and borders of clusters. I believe that there are 
+biological differences, but perhaps those differences are more transient and 
+due to many subtle changes in gene expression, not the presence or absence of
+very clear marker genes such as OPALIN which is a very consistant marker. 
+
+Therefore I think this RBFOX1 positive cluster should be treated once as a 
+single cluster, then more care has to be taken to identify different 
+oligodendroglia states within that cluster.
+
+
+
+```{r}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/clust_tree")
+
+pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/clust_tree/clust_tree.pdf", 
+    paper="a4", width=8, height=11.5)
+clustree(
+  nad_ol,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+dev.off()
+
+```
+
+
+```{r}
+nad_ol_sce <- as.SingleCellExperiment(nad_ol)
+```
+
+
+
+
+
+```{r}
+sil_plot <- function(sce_obj, reduction = "PCA",
+                           col_pattern = "RNA_snn_res", 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  res_col <- grep(pattern = col_pattern, names(colData(sce_obj)))
+  names_col <- names(colData(sce_obj))[res_col]
+  # gtools function, sorts gene_names alphanumeric:
+  names_col <- mixedsort(names_col)
+  met_dat <- as.data.frame(colData(nad_ol_sce))
+  distance <- dist(reducedDim(sce_obj, reduction))
+
+  for(i in 1: length(names_col)){
+  clust <- met_dat[[names_col[i]]]
+  clust_int <- as.integer(paste0(clust))
+  sil <- silhouette(clust_int, dist = distance)
+  
+  pdf(paste0(save_dir, 
+               names_col[i], "_sil.pdf"), width=width, height=height)
+  plot(sil, border = NA)
+  dev.off()
+  plot(sil, border = NA)
+  if(i == 1){
+    av_sil_df <- data.frame(res = names_col[i], 
+                            av_sil_w = summary(sil)$avg.width)
+  }else{
+     append_df <- data.frame(res = names_col[i], 
+                            av_sil_w = summary(sil)$avg.width)
+     av_sil_df <- rbind(av_sil_df, append_df)
+  }
+  }
+  return(av_sil_df)
+}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/sil_pl")
+
+av_df <- sil_plot(sce_obj = nad_ol_sce, 
+                          col_pattern = "RNA_snn_res.",
+                          plot_cols = mycoloursP[6:40],
+                          save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/sil_pl/" )
+
+
+av_df$num_res <- as.numeric(sapply(strsplit(av_df$res,"res."), `[`, 2))
+
+av_sil_pl <-ggplot(av_df, aes(x = num_res, y = av_sil_w)) + 
+                    geom_line(color="grey") + 
+                    geom_point(shape=21, color="black", fill="#69b3a2", size=6) + 
+                    theme_bw() +
+                    ylab("Average silhouette width") +
+                    scale_x_continuous(name = "Cluster resolution", 
+                        breaks = av_df$num_res) +
+                   theme(axis.text.x = element_text(angle = 90))
+
+
+
+pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/sil_pl/av_sil_pl.pdf", 
+     width=8, height=4)
+print(av_sil_pl)
+dev.off()
+
+```
+
+Approximate silhouette
+
+```{r}
+
+approx_sil <- function(sce_obj, reduction = "PCA",
+                           col_pattern = "RNA_snn_res", 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  res_col <- grep(pattern = col_pattern, names(colData(sce_obj)))
+  names_col <- names(colData(sce_obj))[res_col]
+  # gtools function, sorts gene_names alphanumeric:
+  names_col <- mixedsort(names_col)
+  met_dat <- as.data.frame(colData(nad_ol_sce))
+
+  for(i in 1: length(names_col)){
+    clust <- met_dat[[names_col[i]]]
+    clust_int <- as.integer(paste0(clust))
+    
+    sil_approx <- approxSilhouette(reducedDim(sce_obj, reduction), 
+                                   clusters = clust_int)
+    sil_data <- as.data.frame(sil_approx)
+    sil_data$closest <- factor(ifelse(sil_data$width > 0, clust_int, sil_data$other))
+    sil_data$cluster <- factor(clust_int)
+    
+    apr_sil_plot <-ggplot(sil_data, aes(x=cluster, y=width, colour=closest)) + 
+    ggbeeswarm::geom_quasirandom(method="smiley") + theme_bw(20) +
+      xlab(names_col[i])
+    
+    
+  pdf(paste0(save_dir, 
+               names_col[i], "_sil.pdf"), width=width, height=height)
+  
+ 
+  print(apr_sil_plot)
+  
+  dev.off()
+  
+  print(apr_sil_plot)
+  }
+  print("Done")
+}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/appr_sil")
+
+
+approx_sil(sce_obj = nad_ol_sce, 
+                          col_pattern = "RNA_snn_res.",
+                          plot_cols = mycoloursP[6:40],
+                          save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/appr_sil/" )
+  
+
+```
+
+
+Cluster purity
+
+```{r}
+
+
+clu_pure <- function(sce_obj, reduction = "PCA",
+                           col_pattern = "RNA_snn_res", 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  res_col <- grep(pattern = col_pattern, names(colData(sce_obj)))
+  names_col <- names(colData(sce_obj))[res_col]
+  # gtools function, sorts gene_names alphanumeric:
+  names_col <- mixedsort(names_col)
+  met_dat <- as.data.frame(colData(nad_ol_sce))
+
+  for(i in 1: length(names_col)){
+    clust <- met_dat[[names_col[i]]]
+    clust_int <- as.integer(paste0(clust))
+    
+    pure <- neighborPurity(reducedDim(sce_obj, reduction), clusters = clust_int)
+    pure_data <- as.data.frame(pure)
+    pure_data$maximum <- factor(pure_data$maximum)
+    pure_data$cluster <- factor(clust_int)
+    
+    
+    pure_plot <- ggplot(pure_data, aes(x=cluster, y=purity, colour=maximum)) + 
+      ggbeeswarm::geom_quasirandom(method="smiley") +
+      theme_bw(20) +
+      xlab(names_col[i])
+    
+    
+    pdf(paste0(save_dir, 
+               names_col[i], "_sil.pdf"), width=width, height=height)
+    
+    print(pure_plot)
+  
+    dev.off()
+    
+    print(pure_plot)
+  }
+  print("Done")
+}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/clust_pure")
+
+
+clu_pure(sce_obj = nad_ol_sce, 
+                          col_pattern = "RNA_snn_res.",
+                          plot_cols = mycoloursP[6:40],
+                          save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/clust_pure/")
+
+
+
+
+```
+
+
+Although there are statistics to select the most stable clusters, those clusters
+may not be biologically the most interesting ones. It can be seen that the most
+stable clustering is the one separating OPCs from oligodendrocytes and this is
+not surprising. But further clustering is possible and I think the only way to 
+select the maximum number of clusters is to
+  1) test for discriminating differentially expressed genes
+  2) validate those gene markers (or their proteins) in tissue
+
+# Annotation
+
+After having had a look further downstream, I decided about a resolution to use
+for which I am confident to find markers for each cluster. Therefore I am now
+going to give clusters at that chosen resolutions names
+
+```{r}
+Idents(nad_ol) <- "RNA_snn_res.0.3"
+  nad_ol <-  RenameIdents(
+    nad_ol,
+    "0" = "Oligo_A",
+    "1" = "Oligo_B",
+    "2" = "Oligo_C",
+    "3" = "OPC_A",
+    "4" = "Oligo_D",
+    "5" = "Oligo_E",
+    "6" = "OPC_B",
+    "7" = "Oligo_F",
+    "8" = "COP_A",
+    "9" = "COP_B",
+    "10" = "COP_C"
+  )
+# Plot result
+DimPlot(nad_ol,label = TRUE, repel=TRUE)
+dim_pl <- DimPlot(nad_ol,label = TRUE, repel=FALSE, cols = mycoloursP[6:40],
+                  label.size = 4.5)
+dim_pl
+# Save result
+nad_ol$ol_clusters_named <- Idents(nad_ol)
+
+
+pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/diff_dim_pl/annotated_0_3.pdf", 
+     width=8, height=5)
+print(dim_pl)
+
+dev.off()
+
+
+```
+
+# Cluster QC
+
+#### Individuals per cluster
+How many individuals contribute to each cluster?
+
+```{r indiv-per-cluster}
+nad_ol@meta.data$ol_clusters_named <- factor(nad_ol@meta.data$ol_clusters_named,
+                                             levels = c("OPC_A", 
+                                                        "OPC_B", 
+                                                        "COP_A",
+                                                        "COP_B",
+                                                        "COP_C",
+                                                        "Oligo_A",
+                                                        "Oligo_B",
+                                                        "Oligo_C",
+                                                        "Oligo_D",
+                                                        "Oligo_E",
+                                                        "Oligo_F"))
+
+# count how many cells there are in each group and cluster
+sum_caseNO_cluster <- table(nad_ol$ol_clusters_named, nad_ol$caseNO)
+# For each cluster (on the rows) sum of individuals that do have cells on that cluster
+rowSums(sum_caseNO_cluster > 0)
+```
+Nothing stands out
+
+#### Percentage of cells that come from each individual
+
+Some of the clusters might be mainly from one person, even though other subjects
+do have some cells that cluster with it. To address this question we calculate
+for each cluster the proportion of cells that come from each caseNO.
+
+```{r prop-per-cluster}
+
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNO_table <- prop.table(sum_caseNO_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNO <- as.data.frame(prop_caseNO_table)
+colnames(prop_caseNO) <- c("cluster", "caseNO", "proportion")
+```
+
+Flag the clusters where one of the individuals covers more than 40% of the
+cluster. The expected would be around `1/20= 5%`
+
+```{r}
+prop_caseNO[prop_caseNO$proportion > 0.4, ]
+```
+
+
+#### Minimum threshold of 2% contribution to count individuals
+Another interesting variable is the number of individuals that contribute to
+more than a certain threshold (15%) to each cluster
+
+```{r min-pct}
+# Calculuate for each cluster the number of individuals that fulfill the 
+#condition of contributing more than a 15%
+num_individuals_gt_15pt <- rowSums(prop_caseNO_table > 0.15)
+# Sort the clusters by ascending order of number of individuals that contribute more than 2%
+sort(num_individuals_gt_15pt)
+#And a general overview of the data
+summary(num_individuals_gt_15pt)
+# Save the ones that are formed by less than 8 individuals that fulfill the condition
+(clusters_bad <- rownames(prop_caseNO_table)[which(num_individuals_gt_15pt < 8)])
+
+```
+
+
+
+Plot the proportions for caseNo
+
+```{r prop-plot}
+# plot a barplot
+
+
+ggplot(data = prop_caseNO, aes(x = cluster, y = proportion, fill = caseNO)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[1:20])
+```
+
+It is also worth keeping in mind the size of the cluster, there are in ascending
+order (0 is the biggest cluster and 10 the smallest).
+
+#### Samples instead of individuals
+
+The proportions are again calculated but taking into consideration the samples 
+instead of the individuals
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_caseNOtissue_cluster <- table(nad_ol$ol_clusters_named, nad_ol$process_number)
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNOtissue_table <- prop.table(sum_caseNOtissue_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNOtissue <- as.data.frame(prop_caseNOtissue_table)
+colnames(prop_caseNOtissue) <- c("cluster", "process_number", "proportion")
+prop_caseNOtissue[prop_caseNOtissue$proportion > 0.3, ]
+```
+## Conclusion of cluster QC
+Cluster 8 which is a COP cluster is mainly made up by one sample . But COPs are 
+not the focus of the present study, so that this is acceptable. Also, as 
+transitional states they may be more difficult to capture in post-mortem adult
+tissue. 
+There are some other donors contributing procentulally more to clusters 
+7,8,9,10 and 5 than others.
+
+
+
+
+
+# Compositional differences with age, sex and regions 
+
+Some general distributions about the data. We started with equal number of
+sex/age/tissues but because we deleted samples these are not equal any more.
+Also the number of cells from each one might differ
+
+```{r general}
+# Number of samples per ageSex
+colSums(table(nad_ol$process_number, nad_ol$ageSex)>0)
+# Number of samples per tissue
+colSums(table(nad_ol$process_number, nad_ol$Tissue)>0)
+# Both things combined (there might be another way of doing this, but it works)#
+colSums(table(nad_ol$caseNO, nad_ol$ageSex, nad_ol$Tissue)>0)
+# Number of nuclei per sexage group
+table(nad_ol$ageSex)
+
+#number of nuclei per tissue
+table(nad_ol$Tissue)
+#number of nuclei per age group
+table(nad_ol$AgeGroup)
+#number of nuclei per sex group
+table(nad_ol$gender)
+
+# both things combined
+table(nad_ol$ageSex, nad_ol$Tissue)
+
+
+```
+
+At a sample level more young women and CB samples were deleted. We can see there
+are less cells from young women, however there are less cells in the BA4 than
+the other two.
+
+## Age and Sex Grouping
+
+Separate by both things in 4 plots. The plots are corrected by number of cells
+per sexage group first (looking at the distribution of each group across
+clusters) and then corrected for the number of cells per cluster (to visualize
+the small and big clusters equally).
+
+```{r, fig.width=15, fig.height=10}
+# Sex
+# DimPlot(nad_ol, split.by = "ageSex", group.by = "Tissue", ncol = 5)
+DimPlot(nad_ol, split.by = "ageSex", group.by = "ol_clusters_named", ncol = 2,
+        cols = mycoloursP, pt.size = 2, label = TRUE, label.size = 6)
+```
+
+Calculate proportion clusters for each AgeSex
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_ageSex_cluster <- table(nad_ol$ol_clusters_named, nad_ol$ageSex)
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_ageSex_table_2 <- prop.table(sum_ageSex_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_ageSex_table_2_1 <- prop.table(prop_ageSex_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+
+prop_ageSex <- as.data.frame(prop_ageSex_table_2)
+colnames(prop_ageSex) <- c("cluster", "ageSex", "proportion")
+
+level_list <- c("Young women", "Old women", "Young men", "Old men")
+prop_ageSex$ageSex <- factor(prop_ageSex$ageSex, levels = level_list)
+
+
+# plot a barplot proportion
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+
+```
+
+Plot the same for Sex and Age separate
+
+```{r}
+# separate the sex and age
+prop_ageSex_sep <- separate(prop_ageSex, col = ageSex, 
+                            into = c("age", "sex"), sep = " ")
+
+
+
+
+# plot a barplot for the sex
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(position = "fill", stat = "identity") + 
+  theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# And for the age
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Tissue
+
+split the clustering by the original tissues
+
+```{r, fig.width=8, fig.height=8}
+Idents(nad_ol) <- nad_ol$ol_clusters_named
+umap_clusters <- DimPlot(nad_ol, split.by = "Tissue", ncol = 2, 
+                         cols = mycoloursP, pt.size = 2, label = T) +NoLegend()
+umap_clusters
+```
+
+Calculate proportion clusters for each Tissue
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_tissue_cluster <- table(nad_ol$ol_clusters_named, nad_ol$Tissue)
+# Delete the row that does not contain any cell (cluster 26,that has been removed)
+keep <- rowSums(sum_tissue_cluster) > 0
+sum_tissue_cluster <- sum_tissue_cluster[keep,]
+
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_tissue_table_2 <- prop.table(sum_tissue_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_tissue_table_2_1 <- prop.table(prop_tissue_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_tissue <- as.data.frame(prop_tissue_table_2)
+colnames(prop_tissue) <- c("cluster", "Tissue", "proportion")
+
+
+#plot
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  ylab("Normalised counts")
+
+
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+```
+
+
+
+
+### tables shown with numbers
+
+To better understand the proportions I show the different steps with tables
+
+```{r}
+sum_ageSex_cluster
+(prop_ageSex_table_2)*100
+prop_ageSex_table_2_1*100
+```
+
+
+```{r}
+
+#saveRDS(nad_ol, "/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs_LS.RDS")
+
+```
+
+```{r}
+sessionInfo()
+
+```
+
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,497 @@
+---
+title: "Integration with murine spinal cord"
+author: "Luise A. Seeker"
+date: "28/06/2021"
+output: html_document
+---
+
+```{r}
+library(GEOquery)
+library(Seurat)
+library(biomaRt)
+library(here)
+library(ggsci)
+
+```
+
+```{r}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+
+#getGEOSuppFiles("GSE75330")
+
+raw_counts <- read.table(file = here("data",
+                                     "downloaded_datasets",
+                                     "Marques",
+                                     "GSE75330_Marques_et_al_mol_counts2.tab"), 
+                         header = TRUE, sep = '\t', row.names = 1)
+
+
+exp_GSE75330 <- CreateSeuratObject(counts = raw_counts)
+
+# Find variable features
+
+exp_GSE75330 <- FindVariableFeatures(exp_GSE75330, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(exp_GSE75330), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(exp_GSE75330)
+plot2 <- LabelPoints(plot = plot1, 
+                     points = top10, 
+                     repel = TRUE)
+plot1 + plot2
+
+
+#scale all genes (if there is a batch effect I could add vars to regress here)
+
+all_genes <- rownames(exp_GSE75330)
+exp_GSE75330 <- ScaleData(exp_GSE75330, features = all_genes)
+
+
+#linear dimensional reduction
+
+exp_GSE75330 <- RunPCA(exp_GSE75330, 
+                       features = VariableFeatures(object = exp_GSE75330), 
+                       npcs = 100)
+ElbowPlot(exp_GSE75330, ndims = 100)
+
+
+
+exp_GSE75330 <- FindNeighbors(exp_GSE75330, dims = 1:25)
+exp_GSE75330 <- FindClusters(exp_GSE75330, resolution = 0.5)
+
+
+
+exp_GSE75330 <- RunUMAP(exp_GSE75330, dims = 1:25)
+
+exp_GSE75330 <- RunTSNE(exp_GSE75330, dims = 1:25, check_duplicates = FALSE)
+
+
+DimPlot(exp_GSE75330, reduction = "umap", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+
+
+FeaturePlot(exp_GSE75330, features = c("Klk6", "Sparc", "Sparcl1"))
+
+DimPlot(exp_GSE75330, reduction = "tsne", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+
+```
+
+```{r}
+FeaturePlot(exp_GSE75330, reduction = "tsne", 
+            features = c("Rbfox1", "Sparc", "Sparcl1", "Opalin"))
+
+FeaturePlot(exp_GSE75330, reduction = "tsne", features = c("Klk6", "Sparc", 
+                                                           "Sparcl1"))
+
+FeaturePlot(exp_GSE75330, reduction = "tsne", 
+            features = c("Pdgfra", "Cspg4", "Ptprz1", "Pcdh15", 
+                         "Vcan", "Sox6", "Gpr17", "Neu4", "Bmp4", "Nkx2-2", 
+                         "Tbx18", "Vtn", "Lum", "Col1a2", "Tcf7l2", "Casr",
+                         "Ctps", "Klk6", "Tcf7l2", "Mal", "Mog", "Plp1", 
+                         "Opalin", "Serinc5", "Apod"))
+
+# For integrating the mouse with the human dataset, gene names have to be the same.
+# for converting mouse nomenclature to human gene names, I use biomaRt and filter
+# out genes or which no human nomenclature exists
+
+
+# use library("biomaRt")
+listMarts()
+ensembl <- useMart("ensembl")
+ensembl_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+ensembl_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+
+
+mouse_genes <- rownames(raw_counts)
+matched_genes <- getLDS(attributes = c("mgi_symbol", "chromosome_name"),
+       filters = "mgi_symbol", values = mouse_genes, mart = ensembl_mouse,
+       attributesL = c("hgnc_symbol", 
+                       "chromosome_name", 
+                       "start_position", "end_position") , 
+       martL = ensembl_human)
+
+matched_genes <- subset(matched_genes, matched_genes$HGNC.symbol != "")
+
+subset_boul <- rownames(raw_counts) %in% matched_genes$MGI.symbol
+raw_counts <- raw_counts[subset_boul,]
+
+subs_boul_2 <- matched_genes$MGI.symbol %in% rownames(raw_counts)
+  
+# match the order of matched_genes$MGI.symbol wieh rownames(raw_counts)
+matched_genes <- matched_genes[match(rownames(raw_counts), 
+                                     matched_genes$MGI.symbol),]
+
+rownames(raw_counts) <- make.unique(rownames(raw_counts))
+matched_genes$MGI.symbol <- make.unique(matched_genes$MGI.symbol)
+matched_genes$HGNC.symbol <- make.unique(matched_genes$HGNC.symbol)
+
+summary(rownames(raw_counts) == matched_genes$MGI.symbol)
+
+
+rownames(raw_counts) <- matched_genes$HGNC.symbol
+
+int_mus <- CreateSeuratObject(counts = raw_counts)
+
+#check how mt genes are called in the mouse genome
+int_mus[["percent.mt"]] <- PercentageFeatureSet(int_mus, pattern = "^mt-")
+
+VlnPlot(int_mus, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+FeatureScatter(int_mus, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+int_mus <- NormalizeData(int_mus, normalization.method = "LogNormalize", scale.factor = 10000)
+
+
+# Find variable features
+
+int_mus <- FindVariableFeatures(int_mus, 
+                                     selection.method = "vst", 
+                                     nfeatures = 2000)
+
+top10 <- head(VariableFeatures(int_mus), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(int_mus)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+
+
+
+#scale all genes (if there is a batch effect I could add vars to regress here)
+
+all_genes <- rownames(int_mus)
+int_mus <- ScaleData(int_mus, features = all_genes)
+
+
+#linear dimensional reduction
+
+int_mus <- RunPCA(int_mus, 
+                       features = VariableFeatures(object = int_mus), 
+                       npcs = 100)
+int_mus <- FindNeighbors(int_mus, dims = 1:25)
+int_mus <- FindClusters(int_mus, resolution = 0.5)
+int_mus <- RunUMAP(int_mus, dims = 1:25)
+int_mus <- RunTSNE(int_mus, dims = 1:25, check_duplicates = FALSE)
+
+
+DimPlot(int_mus, reduction = "umap", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+
+DimPlot(int_mus, reduction = "tsne", label = T, cols = mycoloursP, 
+        pt.size = 2)
+
+
+FeaturePlot(int_mus, reduction = "tsne", 
+            features = c("RBFOX1", "SPARC", "SPARCL1", "OPALIN"))
+
+
+genes <- c("Pdgfra", "Cspg4", "Ptprz1", "Pcdh15", 
+  "Vcan", "Sox6", "Gpr17", "Neu4", "Bmp4", "Nkx2-2", 
+  "Tbx18", "Vtn", "Lum", "Col1a2", "Tcf7l2", "Casr",
+  "Ctps", "Klk6", "Tcf7l2", "Mal", "Mog", "Plp1", 
+  "Opalin", "Serinc5", "Apod")
+
+genes <- toupper(genes)
+
+
+FeaturePlot(int_mus, reduction = "tsne", 
+            features = genes)
+
+
+int_mus@meta.data$dataset <- "Marques"
+
+```
+
+
+Read in data from Sathyamurthy et al. 
+
+```{r}
+raw_counts_S <- read.table(file = here("data",
+                                     "downloaded_datasets",
+                                     "Sathyamurthy",
+                                     "GSE103892_Expression_Count_Matrix.txt"), 
+                         header = TRUE, sep = '\t', row.names = 1)
+
+
+met_dat_S <- read.table(file = here("data",
+                                     "downloaded_datasets",
+                                     "Sathyamurthy",
+                                     "GSE103892_Sample_Cell_Cluster_Information.txt"), 
+                         header = TRUE, sep = '\t', row.names = 1)
+
+
+
+```
+Use BiomaRt to change mouse gene symbols to human gene symbols
+```{r}
+
+mouse_genes_S <- rownames(raw_counts_S)
+matched_genes_S <- getLDS(attributes = c("mgi_symbol", "chromosome_name"),
+       filters = "mgi_symbol", values = mouse_genes_S, mart = ensembl_mouse,
+       attributesL = c("hgnc_symbol", 
+                       "chromosome_name", 
+                       "start_position", "end_position") , 
+       martL = ensembl_human)
+
+matched_genes_S <- subset(matched_genes_S, matched_genes_S$HGNC.symbol != "")
+
+subset_boul <- rownames(raw_counts_S) %in% matched_genes_S$MGI.symbol
+raw_counts_S <- raw_counts_S[subset_boul,]
+
+subs_boul_2 <- matched_genes_S$MGI.symbol %in% rownames(raw_counts_S)
+  
+# match the order of matched_genes$MGI.symbol wieh rownames(raw_counts)
+matched_genes_S <- matched_genes_S[match(rownames(raw_counts_S), 
+                                     matched_genes_S$MGI.symbol),]
+
+rownames(raw_counts_S) <- make.unique(rownames(raw_counts_S))
+matched_genes_S$MGI.symbol <- make.unique(matched_genes_S$MGI.symbol)
+matched_genes_S$HGNC.symbol <- make.unique(matched_genes_S$HGNC.symbol)
+
+summary(rownames(raw_counts_S) == matched_genes_S$MGI.symbol)
+
+
+rownames(raw_counts_S) <- matched_genes_S$HGNC.symbol
+
+
+
+
+exp_GSE103892 <- CreateSeuratObject(counts = raw_counts_S, 
+                                    meta.data = met_dat_S)
+# Subset for oligos
+
+Idents(exp_GSE103892) <- "cell.type"
+
+exp_GSE103892_ol <- subset(exp_GSE103892, ident = c("Oligos", "OPC"))
+
+#check how mt genes are called in the mouse genome
+exp_GSE103892_ol[["percent.mt"]] <- PercentageFeatureSet(exp_GSE103892_ol, 
+                                                         pattern = "^MT-")
+
+VlnPlot(exp_GSE103892_ol, 
+        features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), 
+        ncol = 3)
+
+FeatureScatter(exp_GSE103892_ol, 
+               feature1 = "nCount_RNA", 
+               feature2 = "nFeature_RNA")
+
+exp_GSE103892_ol <- NormalizeData(exp_GSE103892_ol, 
+                               normalization.method = "LogNormalize", 
+                               scale.factor = 10000)
+
+```
+
+
+
+```{r}
+# Find variable features
+
+exp_GSE103892_ol <- FindVariableFeatures(exp_GSE103892_ol, 
+                                     selection.method = "vst", 
+                                     nfeatures = 2000)
+
+top10 <- head(VariableFeatures(exp_GSE103892_ol), 10)
+
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(exp_GSE103892_ol)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot1 + plot2
+
+```
+
+```{r}
+
+#scale all genes (if there is a batch effect I could add vars to regress here)
+
+all_genes <- rownames(exp_GSE103892_ol)
+exp_GSE103892_ol <- ScaleData(exp_GSE103892_ol, features = all_genes)
+
+
+#linear dimensional reduction
+
+exp_GSE103892_ol <- RunPCA(exp_GSE103892_ol, 
+                       features = VariableFeatures(object = exp_GSE103892_ol), 
+                       npcs = 100)
+exp_GSE103892_ol <- FindNeighbors(exp_GSE103892_ol, dims = 1:25)
+exp_GSE103892_ol <- FindClusters(exp_GSE103892_ol, resolution = 0.5)
+exp_GSE103892_ol <- RunUMAP(exp_GSE103892_ol, dims = 1:25)
+exp_GSE103892_ol <- RunTSNE(exp_GSE103892_ol, dims = 1:25, 
+                            check_duplicates = FALSE)
+
+
+DimPlot(exp_GSE103892_ol, reduction = "umap", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+
+
+FeaturePlot(exp_GSE103892_ol, features = c("MBP", "PLP1", "MAG", "RBFOX1",
+                                           "OPALIN", "SPARC"))
+```
+
+
+```{r}
+
+exp_GSE103892_ol@meta.data$dataset <- "Sathyamurthy"
+
+```
+
+
+read in human dataset or take from the environment
+```{r} 
+nad_ol <- readRDS(here("data",
+                       "single_nuc_data",
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+
+nad_ol@meta.data$dataset <- "Seeker"
+
+
+```
+
+Integrate
+
+```{r}
+# Integrate
+ol_anchors <- FindIntegrationAnchors(object.list = list(nad_ol, exp_GSE103892_ol, int_mus), 
+                                     dims = 1:20) 
+
+ol_comb <- IntegrateData(anchorset = ol_anchors, dims = 1:20)
+
+DefaultAssay(ol_comb) <- "integrated"
+
+# Run the standard workflow for visualization and clusterin
+
+
+all_genes <- rownames(ol_comb)
+ol_comb <- ScaleData(ol_comb, features = all_genes)
+ol_comb <- RunPCA(ol_comb, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+ol_comb <- RunUMAP(ol_comb, reduction = "pca", dims = 1:20)
+ol_comb <- FindNeighbors(ol_comb, reduction = "pca", dims = 1:20)
+ol_comb <- FindClusters(ol_comb, resolution = 0.5)
+
+
+# Visualization
+ol_comb@meta.data$Tissue <- ifelse(ol_comb@meta.data$Tissue == "NA", 
+                                   paste("Mouse"),
+                                   ol_comb@meta.data$Tissue)
+
+DimPlot(ol_comb, reduction = "umap", group.by = "dataset")
+DimPlot(ol_comb, reduction = "umap", group.by = "dataset", split.by = "dataset")
+DimPlot(ol_comb, reduction = "umap", label = TRUE)
+
+
+
+DefaultAssay(ol_comb) <- "RNA"
+FeaturePlot(ol_comb, features = c("PLP1", "MAG", "MOG", "OPALIN", "PDGFRA"))
+
+FeaturePlot(ol_comb, features = c("SPARC"))
+FeaturePlot(ol_comb, features = c("SPARCL1"))
+FeaturePlot(ol_comb, features = c("RBFOX1"))
+
+DimPlot(ol_comb, reduction = "umap", group.by = "Tissue", 
+        cols = mycoloursP[1:15])
+
+DimPlot(ol_comb, reduction = "umap", group.by = "Tissue", 
+        split.by = "Tissue",
+        cols = mycoloursP[1:15])
+
+DimPlot(ol_comb, reduction = "umap", group.by = "dataset", 
+        cols = mycoloursP[1:15])
+
+DimPlot(ol_comb, reduction = "umap", group.by = "dataset", 
+        split.by = "dataset",
+        cols = mycoloursP[1:15])
+
+FeaturePlot(ol_comb, features = "SPARC")
+FeaturePlot(ol_comb, features = "RBFOX1")
+FeaturePlot(ol_comb, features = "OPALIN")
+
+FeaturePlot(ol_comb, features = "SPARC", split.by = "dataset")
+FeaturePlot(ol_comb, features = "RBFOX1", split.by = "dataset")
+
+DimPlot(ol_comb, reduction = "umap", group.by = "Tissue", split.by = "Tissue")
+
+
+FeaturePlot(hum_ol, features = c("SPARC", "RBFOX1", "OPALIN"))
+
+FeaturePlot(hum_ol, features = "SPARC")
+
+```
+```{r}
+
+pt <- table(Idents(ol_comb), ol_comb$dataset)
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = mycoloursP) +
+  theme(legend.title = element_blank())
+
+```
+```{r}
+sat <- subset(pt, pt$Var2 == "Sathyamurthy")
+sat_total <- sum(sat$Freq)
+sat_total
+```
+
+
+Save integrated dataset
+```{r}
+save_directory <- here("data", 
+                       "integrated")
+
+dir.create(save_directory)
+
+saveRDS(ol_comb, here(save_directory, 
+                       "int_Marques_Sathyamurthy.RDS"))
+```
+
+```{r}
+
+cols_rearranged <- c("#FF410DB2", "#7E6148B2", "#B09C85B2", 
+                     "#DC0000B2", "#6EE2FFB2", "#F7C530B2", 
+                     "#95CC5EB2", "#D0DFE6B2", "#F79D1EB2", 
+                     "#8491B4B2", "#91D1C2B2")
+```
+
+```{r}
+DimPlot(ol_comb, group.by = "ol_clusters_named", 
+        cols = cols_rearranged, label = TRUE) + 
+  NoLegend()
+
+```
+
+```{r}
+DimPlot(ol_comb, group.by = "ol_clusters_named", 
+        cols = cols_rearranged, label = TRUE) + 
+  NoLegend()
+
+```
+
+
+```{r}
+
+sessionInfo()
+```
+

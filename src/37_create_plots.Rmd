@@ -1,0 +1,302 @@
+---
+title: "clusterTree"
+author: "Luise A. Seeker"
+date: "19/07/2021"
+output: html_document
+---
+```{r}
+library(clustree)
+library(Seurat)
+library(ggsci)
+
+```
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_annotated_nadine/srt_anno_01.RDS")
+
+nad_ol <- readRDS(here::here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+
+```
+
+```{r}
+
+DotPlot(nad_ol, features = c("PDGFRA", "PLP1", "PAX3", "SLC22A3", "NELL1", "GAP43", 
+                             "GPC5", "GPR17", "PRICKLE1", "SGK1", "OPALIN",
+                             "PLXDC2", "HHIP", "RASGRF1",
+                             "RBFOX1", "AFF3", "FMN1", "SPARC", "HCN2", "TUBB2B")) + RotatedAxis()
+```
+
+
+```{r}
+nad_ol@meta.data$ol_clusters_named <- factor(nad_ol@meta.data$ol_clusters_named, 
+                                             levels = c("Oligo_B",
+                                                        "Oligo_D",
+                                                        "Oligo_E",
+                                                        "Oligo_C",
+                                                        "Oligo_A",
+                                                        "Oligo_F",
+                                                        "OPC_A",
+                                                        "OPC_B",
+                                                        "COP_A",
+                                                        "COP_B", 
+                                                        "COP_C"))
+
+Idents(nad_ol) <- nad_ol@meta.data$ol_clusters_named 
+DotPlot(nad_ol, features = c("PDGFRA", "PLP1", 
+                             "GPR17", "PRICKLE1", "SGK1", "BCAN",
+                             "GPC5", "SPARCL1", "TRPM3", "GRIA1",
+                             "GAP43", "TRIO", "ATRNL1",
+                             "NELL1", "L3MBTL4", "LINC01965", 
+                             "PAX3", "SLC22A3", "SEMA3D",
+                             "SPARC", "DHCR24", "HCN2", "TUBA1A", "TUBB2B",
+                             "VAMP3", "PMP2",
+                             "OPALIN","PLXDC2", "LAMA2", "PALM2", "HHIP", 
+                             "RBFOX1","FMN1",
+                             "RASGRF1", "AFF3", 
+                             "LGALS1")) + RotatedAxis()
+```
+
+
+```{r}
+seur_comb <- FindClusters(seur_comb, 
+                          resolution =  c(0, 0.02, 0.05))
+
+
+
+```
+
+```{r, fig.width= 8, fig.height=15}
+
+clustree(
+  seur_comb,
+  prefix = "RNA_snn_res.",
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL)
+
+```
+
+```{r}
+Idents(seur_comb) <- "RNA_snn_res.1.3"
+
+seur_comb@meta.data$dot_plot_id <- factor(as.factor(seur_comb$RNA_snn_res.1.3),
+                                          levels = c("8", "0", "5", "6", "1", "18",
+                                                     "4", "28", "7", "11", "26",
+                                                     "10", "27", "21", "15",
+                                                     "2", "13", "9", "24", "31",
+                                                     "22", "29", "32", "3",
+                                                     "30", "14", "17", "23",
+                                                     "16", "12", "19", "20",
+                                                     "25"))
+Idents(seur_comb) <- "dot_plot_id"
+
+
+```
+
+
+```{r}
+DotPlot(seur_comb, features = c("GAPDH",
+                                "SNAP25",
+                                "NRG1",
+                                "NEFH",
+                                "SATB2",
+                                "PDGFRA",
+                                "FAM19A1",
+                                "GAD2",
+                                "GRIK1",
+                                "KIT",
+                                "GJA1",
+                                "SHISA6",
+                                "EMID1",
+                                "MTURN",
+                                "DNAH9",
+                                "CD74",
+                                "CXCR4",
+                                "HS3ST4",
+                                "P2RY12",
+                                "RELN",
+                                "CLDN5",
+                                "VWF",
+                                "PDGFRB",
+                                "MAG"))+ RotatedAxis()
+
+```
+
+Add Nadine's cluster labels to my oligodendroglia dataset
+
+```{r}
+
+subs_boul <- colnames(seur_comb) %in% colnames(nad_ol)
+
+nad_md <- seur_comb@meta.data
+
+subs_nad_md <- nad_md[subs_boul, ]
+
+ol_md <- nad_ol@meta.data
+
+test<- subs_nad_md$Barcode == ol_md$Barcode
+
+# Barcodes are in the same order so that I can simply add information to the 
+# nad_ol Seurat object
+
+nad_ol@meta.data$nad_clusters <- subs_nad_md$clusters_1.3
+
+
+DimPlot(nad_ol, label = TRUE, cols = mycoloursP[6:40], group.by = "nad_clusters")
+```
+```{r, fig.width = 10, fig.height = 8}
+DimPlot(nad_ol, label = TRUE, cols = mycoloursP[6:40], 
+        group.by = "nad_clusters",
+        split.by = "nad_clusters", 
+        ncol = 3)
+```
+
+
+
+
+```{r}
+DimPlot(nad_ol, label = TRUE, cols = mycoloursP[6:40])
+```
+
+```{r}
+FeaturePlot(nad_ol, features = "VIM")
+FeaturePlot(nad_ol, features = "FABP7")
+FeaturePlot(nad_ol, features = "TTYH1")
+FeaturePlot(nad_ol, features = "SPARCL1")
+FeaturePlot(nad_ol, features = "HES1")
+FeaturePlot(nad_ol, features = "CLU")
+FeaturePlot(nad_ol, features = "FOS")
+
+```
+
+```{r}
+FeaturePlot(nad_ol, features = "GFAP")
+
+```
+
+```{r}
+FeaturePlot(nad_ol, features = "SOX9")
+
+```
+
+```{r}
+
+FeaturePlot(nad_ol, features = "S100B")
+FeaturePlot(nad_ol, features = "KCND2")
+FeaturePlot(nad_ol, features = "OLIG1")
+FeaturePlot(nad_ol, features = "PCDH15")
+FeaturePlot(nad_ol, features = "SCRG1")
+FeaturePlot(nad_ol, features = "LHFPL3")
+FeaturePlot(nad_ol, features = "OPCML")
+FeaturePlot(nad_ol, features = "APOD")
+FeaturePlot(nad_ol, features = "OLIG2")
+FeaturePlot(nad_ol, features = "NKX2-2")
+
+
+
+```
+David's paper
+```{r}
+FeaturePlot(nad_ol, features = "LUZP2")
+FeaturePlot(nad_ol, features = "NCALD")
+FeaturePlot(nad_ol, features = "NR0B1")
+FeaturePlot(nad_ol, features = "ETV1")
+FeaturePlot(nad_ol, features = "MITF")
+FeaturePlot(nad_ol, features = "TRAF4")
+
+```
+```{r}
+FeaturePlot(nad_ol, features = "HES1")
+FeaturePlot(nad_ol, features = "GLIS3")
+FeaturePlot(nad_ol, features = "FOS")
+FeaturePlot(nad_ol, features = "NFIA")
+FeaturePlot(nad_ol, features = "NFIB")
+FeaturePlot(nad_ol, features = "HES4")
+FeaturePlot(nad_ol, features = "TSC22D4")
+FeaturePlot(nad_ol, features = "NFATC2")
+FeaturePlot(nad_ol, features = "JUNB")
+FeaturePlot(nad_ol, features = "HES5")
+FeaturePlot(nad_ol, features = "FOXJ1")
+
+```
+
+
+```{r}
+FeaturePlot(nad_ol, features = "SPARCL1")
+
+```
+
+
+```{r}
+
+seur_comb@meta.data$annot_clu <- ifelse(seur_comb@meta.data$clusters_named == "Oligo"|
+                                          seur_comb@meta.data$clusters_named == "OPC",
+                                        paste(seur_comb@meta.data$clusters_named, 
+                                              seur_comb@meta.data$clusters_1.3, 
+                                              sep= "_"),
+                                              paste(seur_comb@meta.data$clusters_named))
+
+DimPlot(seur_comb, group.by = "annot_clu", label = TRUE, 
+         cols = c(mycoloursP[17:50])) +NoLegend()
+```
+
+
+```{r}
+DimPlot(seur_comb, group.by = "annot_clu", label = FALSE, 
+        cols= c(mycoloursP[17:50], mycoloursP[1:15]), 
+        split.by = "Tissue") +NoLegend()
+
+
+```
+
+
+```{r}
+
+Idents(nad_ol) <- "Tissue"
+DotPlot(nad_ol, features = c("SKAP2",
+                             "GNA14",
+                             "PLP1",
+                             "NCKAP5",
+                             "LRRC7"
+                             ))+ RotatedAxis()
+
+```
+
+```{r}
+DimPlot(seur_comb, 
+        cols = c(mycoloursP[10:40], mycoloursP[1:10]),
+        label = FALSE)
+        
+```
+
+
+```{r}
+DimPlot(seur_comb, group.by = "rough_annot", label = FALSE, 
+        cols= c(mycoloursP[17:50], mycoloursP[1:15])) +NoLegend()
+
+
+```
+session info
+
+```{r}
+sessionInfo()
+```

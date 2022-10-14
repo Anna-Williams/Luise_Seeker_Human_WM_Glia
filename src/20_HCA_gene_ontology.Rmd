@@ -1,0 +1,172 @@
+---
+title: "HCA_GO"
+author: "Luise A. Seeker"
+date: "16/04/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# This script if for generating lists of the top 100 genes baesed on their 
+# average expression for each cluster. 
+# L.A. Seeker
+# 20200416
+
+
+#load libraries
+```{r}
+library(Seurat)
+library(here)
+library(ggplot2)
+library(RColorBrewer)
+library(plotrix)
+
+```
+
+
+# Set up for distinctive colours
+```{r}
+
+plot_colour <- grDevices::colors()[grep('gr(a|e)y', grDevices::colors(), invert = T)]
+
+```
+#load data
+
+```{r}
+
+nad_ol <- nad_ol <- readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+```
+
+
+
+
+# Create igene ontology input data
+
+When performing gene ontolog on differentially expressed genes, only the 
+differences between clusters will be flagged, but not their similarities. 
+Therefore, additionally to the gene ontology analysis on differentially 
+expressed genes, I will perform it on the top 100 genes (based on their
+raw expression level).
+
+Here I am preparing and saving the data for this:
+
+
+```{r}
+
+# create folder where to save data
+dir.create(here("outs", "gene_ontology"))
+Idents(nad_ol) <- "ol_clusters_named"
+
+cluster_lev <- levels(nad_ol@meta.data$ol_clusters_named)
+
+for(i in 1 : length(cluster_lev)){
+  clu_dat <- subset(nad_ol, ident = cluster_lev[i])
+  expr <- data.frame(mean_exp = rowMeans(clu_dat@assays$RNA@counts), 
+                     cluster = cluster_lev[i])
+  expr <- expr[order(expr$mean_exp, decreasing = TRUE),, drop = FALSE] 
+  file_n <- paste(cluster_lev[i], "av_raw_expr.csv", sep = "_")
+  write.csv(expr, here("outs", "gene_ontology", file_n))
+}
+
+```
+
+
+# Plotting results
+
+I performed the gene ontology analysis based on the top 100 genes 
+using cytoscape with the plug in ClueGO which produces summary pie charts of 
+detected GO terms. I don't like the representation in those pie charts, because
+they take up so much space and it is difficult to compare different groups. 
+
+Therefore, I manually created a .csv file based on those pie charts, which 
+I will use below for plotting.
+
+## Prepare data
+```{r}
+go_dat <- read.csv(here("outs", "gene_ontology", "GO_terms_top100.csv"))
+
+go_dat$cluster <- factor(go_dat$cluster, levels = c("OPC_A", 
+                                                   "OPC_B", 
+                                                   "COP_A",
+                                                   "COP_B",
+                                                   "COP_C",
+                                                   "Oligo_A",
+                                                   "Oligo_B",
+                                                   "Oligo_C",
+                                                   "Oligo_D",
+                                                   "Oligo_E",
+                                                   "Oligo_F"))
+
+# add a dummy factor to data which can act as legent for the very long
+# GO terms
+
+go_dat_uniq <- go_dat[!duplicated(go_dat$GO.term),]
+go_dat_uniq$dummy_id <- 1:nrow(go_dat_uniq)
+
+go_dat <- merge(go_dat, go_dat_uniq, by = "GO.term", all = TRUE)
+go_dat <- go_dat[,-c(4,5)]
+names(go_dat) <- c("go_term", "cluster", "percent", "go_term_id")
+```
+
+
+## Plot
+```{r, fig.width = 4, fig.height = 10}
+ggplot(go_dat, aes(x = cluster, y = percent, fill = go_term)) +
+  geom_bar(stat = "identity")+ theme_classic() + 
+  scale_fill_manual(values = plot_colour[31:200]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  NoLegend() +
+  geom_text(aes(label= go_term_id), vjust=0.8, color="white",
+            position = "stack", size=3)
+
+
+
+```
+
+
+```{r, fig.width = 4, fig.height = 10}
+ggplot(go_dat, aes(x = cluster, y = percent, fill = go_term)) +
+  geom_bar(stat = "identity")+ theme_classic() + 
+  scale_fill_manual(values = plot_colour[28:150]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + 
+  NoLegend() 
+
+
+
+```
+
+
+
+
+
+
+```{r, fig.width = 10, fig.height = 10}
+ggplot(go_dat, aes(x = cluster, y = percent, fill = go_term)) +
+  geom_bar(stat = "identity")+ theme_classic() + 
+  scale_fill_manual(values = plot_colour[28:150]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+
+
+```
+
+
+
+
+
+
+
+
+# Session info
+
+```{r}
+sessionInfo()
+
+```

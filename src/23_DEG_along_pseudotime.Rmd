@@ -1,0 +1,193 @@
+---
+title: "DGE along pseudotime"
+author: "Luise A. Seeker"
+date: "19/04/2021"
+output: html_document
+---
+
+#### DGE along pseudotime
+
+```{r, figure.align = "center", fig.width = 6, fig.height = 6}
+
+plot_heatmap(
+  model_slingshot,
+  expression_source = my_dat_ba4$expression,
+  grouping = ba4$ol_clusters_named,
+  features_oi = 50
+)
+
+```
+##### Lineage/branch markers
+
+We can also extract features specific for a branch, eg. genes which change when 
+a cell differentiates into a specific oligo subtype
+
+
+##### Oligo A
+```{r, figure.align = "center", fig.width = 6, fig.height = 6}
+branch_feature_importance <- 
+  calculate_branch_feature_importance(model_slingshot, 
+                                      expression_source=my_dat_ba4$expression)
+
+oligo_A_features <- branch_feature_importance %>% 
+  filter(to == which(model_slingshot$milestone_labelling =="Oligo_A")) %>% 
+  top_n(50, importance) %>% 
+  pull(feature_id)
+
+plot_heatmap(
+  model_slingshot, 
+  expression_source = my_dat_ba4$expression, 
+  features_oi = oligo_A_features
+)
+
+```
+
+##### Oligo C
+```{r, figure.align = "center", fig.width = 6, fig.height = 6}
+
+oligo_F_features <- branch_feature_importance %>% 
+  filter(to == which(model_slingshot$milestone_labelling =="Oligo_F")) %>% 
+  top_n(50, importance) %>% 
+  pull(feature_id)
+
+plot_heatmap(
+  model_slingshot, 
+  expression_source = my_dat_ba4$expression, 
+  features_oi = oligo_F_features
+)
+
+```
+
+# SCORPIUS
+
+```{r}
+set.seed(1)
+model <- infer_trajectory(my_dat_ba4, "scorpius")
+
+```
+
+
+```{r}
+
+plot_dimred(model, dimred = my_dat_ba4$dimred)
+
+```
+
+# PAGA
+```{r}
+set.seed(1)
+model = dynwrap::infer_trajectory(my_dat_ba4, ti_paga(filter_features = F), 
+                                  verbose = TRUE)
+```
+
+```{r}
+
+plot_dimred(model)
+
+```
+
+
+```{r}
+
+plot_dimred(model, dimred = my_dat_ba4$dimred)
+
+```
+# PAGA TREE
+```{r}
+set.seed(1)
+model_paga_tree = dynwrap::infer_trajectory(my_dat_ba4, ti_paga_tree(filter_features = F), 
+                                  verbose = TRUE)
+```
+
+```{r}
+
+plot_dimred(model_paga_tree)
+
+```
+
+
+```{r}
+
+plot_dimred(model_paga_tree, dimred = my_dat_ba4$dimred)
+
+```
+
+# MST
+```{r}
+set.seed(1)
+model_mst = dynwrap::infer_trajectory(my_dat_ba4, ti_mst())
+```
+
+
+```{r}
+plot_dimred(model_mst)
+
+```
+```{r}
+
+plot_dimred(model_mst, dimred = my_dat_ba4$dimred)
+
+```
+```{r, fig.width = 6, fig.height=6, fullwidth = TRUE}
+patchwork::wrap_plots(
+  plot_dimred(model_mst, dimred = my_dat_ba4$dimred) + ggtitle("Cell ordering"),
+  plot_dimred(model_mst, dimred = my_dat_ba4$dimred, grouping = group_onto_nearest_milestones(model_mst)) + ggtitle("Cell grouping"),
+  plot_dimred(model_mst, dimred = my_dat_ba4$dimred, feature_oi = "SPARC", expression_source = my_dat_ba4) + ggtitle("Feature expression"),
+  plot_dimred(model_mst, dimred = my_dat_ba4$dimred, "pseudotime", pseudotime = calculate_pseudotime(model_mst)) + ggtitle("Pseudotime")
+)
+
+
+```
+```{r}
+plot_dimred(model_mst, dimred = my_dat_ba4$dimred, grouping = group_onto_nearest_milestones(model_mst)) + ggtitle("Cell grouping")
+
+```
+```{r}
+model_rooted_mst <- model_mst %>% add_root(root_milestone_id = "M14")
+
+
+```
+
+```{r}
+
+plot_dimred(model_rooted_mst, dimred = my_dat_ba4$dimred, 
+            "pseudotime", 
+            pseudotime = calculate_pseudotime(model_mst)) + 
+  ggtitle("Pseudotime")
+```
+
+
+```{r}
+
+plot_dendro(model_mst)
+```
+
+```{r}
+plot_heatmap(model_mst, expression_source = my_dat_ba4)
+```
+
+```{r}
+overall_feature_importances <- 
+  dynfeature::calculate_overall_feature_importance(model_mst, expression_source = my_dat_ba4)
+features <- overall_feature_importances %>% 
+  top_n(40, importance) %>% 
+  pull(feature_id)
+
+```
+
+
+```{r}
+
+plot_graph(my_dat_ba4)
+```
+
+# Save files
+
+
+```{r}
+ti_save_dir <- here("outs", "traj_inf_output")
+dir.create(ti_save_dir)
+
+saveRDS(model_paga_tree, here("outs", "traj_inf_output", "model_paga_tree_ba4.RDS"))
+
+```

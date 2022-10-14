@@ -1,0 +1,429 @@
+---
+title: "HCA RNA velocity using scVelo in R"
+author: "Luise A. Seeker"
+date: "23/04/2021"
+output: html_document
+---
+
+```{r}
+library(scater)
+library(scran)
+library(SingleCellExperiment)
+library(velociraptor)
+library(Seurat) # to convert Seurat to SCE
+library(ggplot2)
+library(here)
+library(ggsci)
+
+
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+# RLoad oligodendroglia Seurat object
+
+```{r}
+nad_ol <- nad_ol <- readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+
+```
+
+
+# Read in spliced and unspliced datasets
+```{r}
+spliced <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/02_scater_cell_filtered/spliced/SCE_spliced_gene_cell_filtered.RDS")
+unspliced <-  readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/02_scater_cell_filtered/unspliced/SCE_unspliced_gene_cell_filtered.RDS")
+```
+
+# Filter for nulclei that are in the oligodendroglia dataset
+
+```{r}
+
+# are colnames of spliced and unspliced the same?
+summary(colnames(spliced) == colnames(unspliced))
+
+# no cells must be in a different order
+
+subs_bool <- colnames(spliced) %in% nad_ol@meta.data$Barcode
+ol_spliced <- spliced[,subs_bool]
+
+subs_bool_2 <- colnames(unspliced) %in% nad_ol@meta.data$Barcode
+ol_unspliced <- unspliced[,subs_bool_2]
+
+
+```
+
+Now I have the same nuclei in the spliced and unspliced dataset, nut they
+are not in the same order yet. 
+
+```{r}
+ol_unspliced <- ol_unspliced[,match(colnames(ol_spliced), colnames(ol_unspliced))]
+
+summary(colnames(ol_unspliced) == colnames(ol_spliced))
+summary(rownames(ol_unspliced) == rownames(ol_spliced))
+```
+
+Now both feature count matrices have the same gene and nuclei order so that the
+count data can be matched. 
+
+
+# Normalise data using scran
+
+Data needs to be normalised. Previously data of different tissues were normalised
+separately, but here I try it together. Previously, spliced and unspliced were
+added first and then normalised. This is obviously not an option here.
+
+
+```{r}
+set.seed(100)
+    clust_sce_sp <- quickCluster(ol_spliced) 
+    #deconv_sf <- calculateSumFactors(split_sce, cluster=clust_sce)
+    ol_spliced <- computeSumFactors(ol_spliced, 
+                                   cluster=clust_sce_sp, 
+                                   min.mean=0.1)
+    ol_spliced <- logNormCounts(ol_spliced)
+    
+set.seed(100)
+    clust_sce_usp <- quickCluster(ol_unspliced) 
+    #deconv_sf <- calculateSumFactors(split_sce, cluster=clust_sce)
+    ol_unspliced <- computeSumFactors(ol_unspliced, 
+                                   cluster=clust_sce_usp, 
+                                   min.mean=0.1)
+    ol_unspliced <- logNormCounts(ol_unspliced)
+        
+
+```
+
+# Re-order nuclei so that they match the order in the Seurat object
+
+```{r}
+ol_unspliced <- ol_unspliced[,match(nad_ol@meta.data$Barcode, colnames(ol_unspliced))]
+ol_spliced <- ol_spliced[,match(nad_ol@meta.data$Barcode, colnames(ol_spliced))]
+
+summary(colnames(ol_unspliced) == colnames(ol_spliced))
+summary(rownames(ol_unspliced) == rownames(ol_spliced))
+
+summary(colnames(ol_unspliced) == nad_ol@meta.data$Barcode)
+```
+
+
+
+# Create singleCellExperiment object with the assays "spliced" and "unspliced
+
+```{r}
+
+
+ol_SCE <- ol_spliced
+
+
+assays(ol_SCE)$spliced <- assays(ol_spliced)$logcounts
+assays(ol_SCE)$unspliced <- assays(ol_unspliced)$logcounts
+```
+
+Alternatively I tried the below, but it does not look right
+```{r}
+
+
+#ol_SCE <- as.SingleCellExperiment(nad_ol)
+
+#assays(ol_SCE, withDimnames = FALSE)$spliced <- assays(ol_spliced)$logcounts
+#assays(ol_SCE, withDimnames = FALSE)$unspliced <- assays(ol_unspliced)$logcounts
+```
+
+# Get top 200 highly variable genes based on the spliced assay
+```{r}
+dec <- modelGeneVarByPoisson(ol_SCE, assay.type="spliced")
+hvgs <- getTopHVGs(dec, n=2000)
+
+
+```
+
+
+# Dimensional reduction
+
+```{r}
+set.seed(1000101)
+ol_SCE <- runPCA(ol_SCE, ncomponents=25, subset_row=hvgs)
+ol_SCE <- runTSNE(ol_SCE, dimred="PCA")
+#ol_SCE <- runUMAP(ol_SCE, dimred="PCA")
+
+```
+
+# save ol_SCE
+```{r}
+saveRDS(ol_SCE, here("data", "scVelo_out", "ol_SCE.RDS"))
+
+```
+
+# Run veociraptor
+```{r}
+velo_out <- scvelo(ol_SCE, assay.X = "spliced", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out
+
+```
+# save velo_out
+```{r}
+dir.create(here("data", "scVelo_out"))
+saveRDS(velo_out, here("data", "scVelo_out", "velo_out.RDS"))
+```
+
+```{r}
+
+ol_SCE$pseudotime <- velo_out$velocity_pseudotime
+
+
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(ol_SCE, "TSNE"), velo_out)
+grid_df <- gridVectors(reducedDim(ol_SCE, "TSNE"), embedded, resolution=30)
+
+
+plotTSNE(ol_SCE, colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.1, y=start.2, xend=end.1, yend=end.2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+ol_SCE$ol_clu <- nad_ol@meta.data$ol_clusters_named
+
+plotTSNE(ol_SCE, colour_by="ol_clu", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.1, y=start.2, xend=end.1, yend=end.2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed")) + 
+    scale_color_manual(values = mycoloursP[6:40])
+
+```
+
+
+
+
+# Add umap embedding to object
+```{r}
+ol_SCE
+reducedDim(ol_SCE, "umap") <- nad_ol[["umap"]]@cell.embeddings
+
+```
+# Run veociraptor
+```{r}
+velo_out <- scvelo(ol_SCE, assay.X = "spliced", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out
+
+```
+# save velo_out
+```{r}
+dir.create(here("data", "scVelo_out"))
+saveRDS(velo_out, here("data", "scVelo_out", "velo_out.RDS"))
+```
+
+```{r}
+
+ol_SCE$pseudotime <- velo_out$velocity_pseudotime
+ol_SCE$ol_clusters_named <- nad_ol$ol_clusters_named
+
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(ol_SCE, "umap"), velo_out)
+grid_df <- gridVectors(reducedDim(ol_SCE, "umap"), embedded, resolution=30)
+
+
+plotReducedDim(ol_SCE, dimred = "umap", colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+plotReducedDim(ol_SCE, dimred = "umap", colour_by="ol_clusters_named", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed")) + 
+    scale_color_manual(values = mycoloursP[6:40])
+
+
+
+```
+
+# Replacing matrix X
+
+Above I have been usign the spliced matric as matrix X. Now I'll rerun it with
+the conventional matrix that I have used in other analyses as matrix X
+
+
+# Run veociraptor
+```{r}
+
+
+velo_out <- scvelo(ol_SCE, assay.X = "logcounts", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out
+
+```
+
+```{r}
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(ol_SCE, "umap"), velo_out)
+grid_df <- gridVectors(reducedDim(ol_SCE, "umap"), embedded, resolution=30)
+
+
+plotReducedDim(ol_SCE, dimred = "umap", colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+plotReducedDim(ol_SCE, dimred = "umap", colour_by="ol_clusters_named", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed")) + 
+    scale_color_manual(values = mycoloursP[6:40])
+
+
+```
+
+# Subset for tissue and repeat
+
+## BA4
+
+```{r}
+bool <- ol_SCE$Tissue == "BA4"
+ba4 <- ol_SCE[,bool]
+
+```
+
+### Run veociraptor
+```{r}
+velo_out_ba4 <- scvelo(ba4, assay.X = "logcounts", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out_ba4
+
+saveRDS(velo_out_ba4, here("data", "scVelo_out", "velo_out_ba4.RDS"))
+```
+
+### Embedd and plot
+```{r}
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(ba4, "umap"), velo_out_ba4)
+grid_df <- gridVectors(reducedDim(ba4, "umap"), embedded, resolution=30)
+
+
+plotReducedDim(ba4, dimred = "umap", colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+plotReducedDim(ba4, dimred = "umap", colour_by="ol_clusters_named", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))+ 
+    scale_color_manual(values = mycoloursP[6:40])
+
+
+```
+
+## CB
+
+```{r}
+bool <- ol_SCE$Tissue == "CB"
+cb <- ol_SCE[,bool]
+
+```
+
+### Run veociraptor
+```{r}
+velo_out_cb <- scvelo(cb, assay.X = "logcounts", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out_cb
+
+saveRDS(velo_out_cb, here("data", "scVelo_out", "velo_out_cb.RDS"))
+```
+
+### Embedd and plot
+```{r}
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(cb, "umap"), velo_out_cb)
+grid_df <- gridVectors(reducedDim(cb, "umap"), embedded, resolution=30)
+
+
+plotReducedDim(cb, dimred = "umap", colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+plotReducedDim(cb, dimred = "umap", colour_by="ol_clusters_named", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))+ 
+    scale_color_manual(values = mycoloursP[6:40])
+
+
+```
+
+## CSC
+
+```{r}
+bool <- ol_SCE$Tissue == "CSC"
+csc <- ol_SCE[,bool]
+
+```
+
+### Run veociraptor
+```{r}
+velo_out_csc <- scvelo(csc, assay.X = "logcounts", 
+    subset.row = hvgs, use.dimred = "PCA")
+velo_out_csc
+
+saveRDS(velo_out_csc, here("data", "scVelo_out", "velo_out_csc.RDS"))
+```
+
+### Embedd and plot
+```{r}
+# Embedd the velocity vectors
+embedded <- embedVelocity(reducedDim(csc, "umap"), velo_out_csc)
+grid_df <- gridVectors(reducedDim(csc, "umap"), embedded, resolution=30)
+
+
+plotReducedDim(csc, dimred = "umap", colour_by="pseudotime", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))
+
+```
+
+```{r}
+plotReducedDim(csc, dimred = "umap", colour_by="ol_clusters_named", point_alpha=0.3) +
+    geom_segment(data=grid_df, 
+        mapping=aes(x=start.UMAP_1, y=start.UMAP_2, xend=end.UMAP_1, yend=end.UMAP_2), 
+        arrow=arrow(length=unit(0.05, "inches"), type="closed"))+ 
+    scale_color_manual(values = mycoloursP[6:40])
+
+
+```
+
+```{r}
+sessionInfo()
+```

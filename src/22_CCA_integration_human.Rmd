@@ -1,0 +1,390 @@
+---
+title: "CCA integratiogn with other datasets"
+author: "Luise A. Seeker"
+date: "18/04/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# Load libraries
+
+```{r}
+library(Seurat)
+library(here)
+library(ggsci)
+library(corrplot)
+library(RColorBrewer)
+
+```
+
+# Build colour palette
+
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+
+```
+
+# Load datasets
+
+```{r, eval = FALSE}
+
+nad_ol <-  readRDS(file.path("/exports",
+                             "eddie",
+                             "scratch",
+                             "lseeker",
+                             "srt_oligos_and_opcs_LS.RDS"))
+```
+
+```{r, eval = FALSE}
+
+load(file.path("/exports",
+               "eddie",
+               "scratch",
+               "lseeker",
+               "SarahsNatureDS", 
+               "Nat19_OL_v3.Robj"))
+
+```
+
+```{r, eval = FALSE}
+
+load(here("data",
+          "downloaded_datasets",
+          "Jaekel_Agirre_2019",
+          "Nat19_OL_v3.Robj"))
+               
+
+```
+
+
+
+
+# Label transfer
+```{r, eval = FALSE}
+lt_anchors <- FindTransferAnchors(reference = Nature19.OL_v3 , query = nad_ol, 
+    dims = 1:30)
+predictions <- TransferData(anchorset = lt_anchors, refdata = Nature19.OL_v3$Celltype_OL, 
+    dims = 1:30)
+lt_nad_ol <- AddMetaData(nad_ol, metadata = predictions)
+
+```
+
+```{r}
+
+lt_nad_ol <- readRDS(here("data", 
+                          "label_transferred", 
+                          "lt_ol_Jaekel_Agirre.RDS"))
+
+#lt_nad_ol <- readRDS("~/Documents/Work/HumanCellAtlas/git_repos/HCA_Luise/data/label_transferred/lt_ol_Jaekel_Agirre.RDS")
+
+DimPlot(lt_nad_ol, group.by = "ol_clusters_named" , 
+        cols = mycoloursP[6:40], label = TRUE)
+```
+
+```{r}
+
+DimPlot(lt_nad_ol, group.by = "predicted.id", cols = mycoloursP[10:40] )
+```
+
+```{r}
+
+DimPlot(lt_nad_ol, group.by = "predicted.id", cols = mycoloursP[10:40], label = "TRUE" )
+```
+```{r}
+
+DimPlot(lt_nad_ol, group.by = "predicted.id", cols = mycoloursP[35:50], 
+        label = "TRUE", label.size = 6, repel = TRUE )
+```
+
+
+```{r, fig.width=8, fig.height=8}
+
+DimPlot(lt_nad_ol, group.by = "predicted.id", split.by = "predicted.id", cols = mycoloursP[7:40], ncol = 3)
+```
+
+
+
+
+
+# Correlation between ol ID and predicted ID
+```{r}
+
+met_dat <- lt_nad_ol@meta.data
+
+cor_df <- data.frame(nad_ol_id = met_dat$ol_clusters_named, nature_id = met_dat$predicted.id)
+
+cor_df$nature_id <- as.factor(cor_df$nature_id)
+cor_df$nature_id <- factor(cor_df$nature_id, levels = c("OPCs",
+                                                        "COPs",
+                                                        "Oligo1",
+                                                        "Oligo2",
+                                                        "Oligo3",
+                                                        "Oligo4",
+                                                        "Oligo5",
+                                                        "Oligo6"))
+
+cor_matr <- matrix(data= 0, 
+                   nrow = length(levels(cor_df$nad_ol_id)), 
+                   ncol = length(levels(cor_df$nature_id)))
+
+rownames(cor_matr) <- levels(cor_df$nad_ol_id)
+colnames(cor_matr) <- levels(cor_df$nature_id)
+
+for(i in 1: nrow(cor_df)){
+  name1 <- as.character(cor_df[i, 1])
+  name2 <- as.character(cor_df[i, 2])
+  cor_matr[name1, name2] <- cor_matr[name1, name2] + 1
+}
+
+max(cor_matr)
+
+centr_cor_matr <- cor_matr/ max(cor_matr)
+
+corrplot(centr_cor_matr)
+
+```
+
+# Correct counts not for largest total counts, but first for cluster size
+
+```{r}
+  
+clu_counts <- table(cor_counts = lt_nad_ol@meta.data$ol_clusters_named)
+
+resiz_mat <- cor_matr
+
+for(i in length(rownames(resiz_mat))){
+  #resiz_mat[rownames(resiz_mat)[i], ]  <- resiz_mat["OPC_A", ] / clu_counts[rownames(resiz_mat)[i]]
+  resiz_mat[rownames(resiz_mat)[i], ]  <- resiz_mat[i, ] / clu_counts[rownames(resiz_mat)[i]]
+}
+
+# Now bring the data on a scale of 0-1 to enable corrplots
+
+centr_resiz_mat <- resiz_mat/ max(resiz_mat)
+
+```
+
+
+```{r, fig.heigth = 10, fig.width = 10}
+corrplot(centr_resiz_mat, type = "full",method = "circle", 
+  col = rep(rev(brewer.pal(n=8, name="RdYlBu")), 2), 
+  cl.lim = c(0,1),
+  mar = c(1, 0, 1, 0),
+   tl.col = "black") 
+
+
+```
+```{r, fig.heigth = 10, fig.width = 10}
+corrplot(centr_resiz_mat, type = "full",method = "color", 
+  col = rep(rev(brewer.pal(n=8, name="RdYlBu")), 2), 
+  cl.lim = c(0,1),
+  mar = c(1, 0, 1, 0),
+   tl.col = "black") 
+
+
+```
+```{r}
+COL1(sequential = c("Oranges", "Purples", "Reds", "Blues", "Greens", 
+                    "Greys", "OrRd", "YlOrRd", "YlOrBr", "YlGn"), n = 200)
+
+COL2(diverging = c("RdBu", "BrBG", "PiYG", "PRGn", "PuOr", "RdYlBu"), n = 200)
+
+```
+
+```{r, fig.heigth = 10, fig.width = 10}
+corrplot(centr_resiz_mat, type = "full",method = "circle", 
+  col = rep(rev(brewer.pal(n=8, name="RdYlBu")), 2), 
+  cl.lim = c(0,1),
+  mar = c(1, 0, 1, 0),
+   tl.col = "black",
+  is.corr = FALSE) 
+
+```
+
+Absolute count values
+
+```{r}
+corrplot(cor_matr, type = "full",method = "circle", 
+  mar = c(1, 0, 1, 0),
+  tl.col = "black",
+  is.corr = FALSE,
+  col = COL1('Greys'))
+
+
+```
+
+```{r}
+corrplot(cor_matr, type = "full",method = "circle", 
+  mar = c(1, 0, 1, 0),
+  tl.col = "black",
+  is.corr = FALSE,
+  col = COL1('Blues'),
+  cl.cex = 1.5,
+  tl.cex = 2, 
+  cl.pos="b")
+
+
+corrplot(cor_matr, type = "full",method = "circle", 
+  mar = c(1, 0, 1, 0),
+  tl.col = "black",
+  is.corr = FALSE,
+  col = COL1('Blues'),
+  cl.cex = 1.5,
+  tl.cex = 2, 
+  cl.pos="r")
+
+
+```
+
+
+```{r}
+
+corrplot(cor_matr, type = "full",method = "number", 
+  col = rep(rev(brewer.pal(n=8, name="RdYlBu")), 2), 
+  cl.lim = c(0,1),
+  mar = c(1, 0, 1, 0),
+   tl.col = "black",
+  is.corr = FALSE) 
+
+```
+# Add a dataset column to individual datasets before integration
+
+```{r, eval = FALSE}
+Nature19.OL_v3@meta.data$dataset <- "Jaekel & Agirre et al. 2019"
+
+lt_nad_ol@meta.data$dataset <- "Seeker et al."
+```
+
+
+# CCA integration
+
+```{r, eval = FALSE}
+oligo_anchors <- FindIntegrationAnchors(object.list = list(lt_nad_ol, 
+                                                           Nature19.OL_v3), 
+                                        dims = 1:20)
+oligos_combined <- IntegrateData(anchorset = oligo_anchors, dims = 1:20)
+```
+
+
+```{r, eval = FALSE}
+DefaultAssay(oligos_combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+oligos_combined <- ScaleData(oligos_combined, verbose = FALSE)
+oligos_combined <- RunPCA(oligos_combined, npcs = 30, verbose = FALSE)
+# t-SNE and Clustering
+oligos_combined <- RunUMAP(oligos_combined, reduction = "pca", dims = 1:20)
+oligos_combined <- FindNeighbors(oligos_combined, reduction = "pca", dims = 1:20)
+oligos_combined <- FindClusters(oligos_combined, resolution = 0.5)
+```
+
+
+
+```{r}
+oligos_combined <- readRDS(here("data", "integrated", "int_Jaekel_Agirre.RDS"))
+oligos_combined <- readRDS("~/Documents/Work/HumanCellAtlas/git_repos/HCA_Luise/data/integrated/int_Jaekel_Agirre.RDS")
+# Visualization
+DimPlot(oligos_combined, reduction = "umap", group.by = "Celltype_OL", 
+        cols = mycoloursP)
+```
+
+```{r}
+oligos_combined$Celltype_OL <- as.factor(oligos_combined$Celltype_OL)
+
+levels(oligos_combined$Celltype_OL)
+
+oligos_combined$Celltype_OL <- factor(oligos_combined$Celltype_OL, levels =
+                                        c(levels(as.factor(oligos_combined$predicted.id)),
+                                          "ImOlGs"))
+```
+
+```{r}
+levels(as.factor(oligos_combined$predicted.id))
+
+```
+
+```{r}
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "predicted.id", 
+        cols = mycoloursP[35:50], split.by = "Condition", label = TRUE)
+```
+
+```{r}
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "Celltype_OL", 
+        cols = mycoloursP[35:50], split.by = "Condition", label = TRUE)
+```
+
+```{r}
+DimPlot(oligos_combined, reduction = "umap", group.by = "Celltype_OL", 
+        split.by= "Condition", 
+        cols = mycoloursP )
+```
+
+
+```{r}
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "ol_clusters_named", 
+        cols = mycoloursP )
+```
+
+
+```{r}
+
+oligos_combined$ol_clusters_named <- as.factor(oligos_combined$ol_clusters_named)
+
+oligos_combined$ol_clusters_named <- factor(oligos_combined$ol_clusters_named, levels = c("OPC_A", "OPC_B", "COP_A", "COP_B", "COP_C", "Oligo_A", "Oligo_B" ,"Oligo_C", "Oligo_D",
+"Oligo_E", "Oligo_F"))
+
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "ol_clusters_named", 
+        split.by= "Condition", 
+        cols = mycoloursP[6:40])
+
+
+```
+
+```{r}
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "ol_clusters_named", 
+        split.by= "dataset", 
+        cols = mycoloursP[10:40] )
+
+
+```
+
+```{r}
+
+DimPlot(oligos_combined, reduction = "umap", group.by = "ol_clusters_named", 
+        cols = mycoloursP[6:40] )
+
+
+```
+
+
+
+```{r, eval=FALSE}
+
+saveRDS(oligos_combined, here("data", 
+                              "integrated", 
+                              "int_Jaekel_Agirre.RDS"))
+```
+
+
+```{r}
+sessionInfo()
+```

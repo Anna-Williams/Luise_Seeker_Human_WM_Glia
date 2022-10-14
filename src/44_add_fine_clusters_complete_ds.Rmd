@@ -1,0 +1,187 @@
+---
+title: "Combin fine clustering wth large dataset"
+author: "Luise A. Seeker"
+date: "25/10/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(here)
+library(ggsci)
+```
+
+# Prepare colours
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7, "black", "blue")
+```
+
+
+# Load datasets
+
+```{r}
+astr <-readRDS(here("data",
+                    "single_nuc_data",
+                    "astrocytes",
+                    "HCA_astrocytes.RDS"))
+
+micro <- readRDS(here("data",
+                    "single_nuc_data",
+                    "microglia",
+                    "HCA_microglia.RDS"))
+
+vasc <- readRDS(here("data",
+                    "single_nuc_data",
+                    "vascular_cells",
+                    "HCA_vascular_cells.RDS"))
+  
+
+neur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "neurons",
+                    "HCA_neurons.RDS"))
+
+nad_ol <- readRDS(here("data",
+                    "single_nuc_data",
+                    "oligodendroglia",
+                    "srt_oligos_and_opcs_LS.RDS"))
+
+
+
+
+  
+
+
+```
+
+
+# Extract relevant cluster information 
+```{r}
+names(astr@meta.data)
+
+astr_df <- data.frame(Barcode = astr$Barcode, 
+                      Fine_cluster = astr$astrocytes_clu)
+
+
+names(micro@meta.data)
+
+micro_df <- data.frame(Barcode = micro$Barcode, 
+                      Fine_cluster = micro$microglia_clu)
+
+names(vasc@meta.data)
+
+vasc_df <- data.frame(Barcode = vasc$Barcode, 
+                      Fine_cluster = vasc$vascular_cells_clu)
+
+names(neur@meta.data)
+
+neur_df <- data.frame(Barcode = neur$Barcode, 
+                      Fine_cluster = neur$neurons_clu)
+
+
+
+names(nad_ol@meta.data)
+
+nad_ol_df <- data.frame(Barcode = nad_ol$Barcode, 
+                      Fine_cluster = nad_ol$ol_clusters_named)
+
+
+
+```
+
+# combine all generated dataframes
+```{r}
+main_df <- rbind(astr_df, micro_df, vasc_df, neur_df, nad_ol_df)
+
+```
+
+# Detatch cell type datasets
+```{r}
+remove(astr)
+remove(micro)
+remove(vasc)
+remove(neur)
+remove(nad_ol)
+
+```
+
+# Read in complete dataset
+
+```{r}
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_anno_01.RDS"))
+
+```
+
+```{r}
+seur_met <- seur@meta.data
+
+main_df$match <- as.factor(ifelse(main_df$Barcode %in% seur$Barcode, 
+                                  "match", 
+                                  "no_match"))
+
+seur_met$match <- as.factor(ifelse(seur_met$Barcode %in% main_df$Barcode, 
+                                  "match", 
+                                  "no_match"))
+
+seur@meta.data$match <- seur_met$match
+
+DimPlot(seur, group.by = "match")
+```
+
+
+```{r}
+
+summary(main_df$Barcode == seur_met$Barcode)
+
+barcode_oder <- seur_met$Barcode
+
+main_DF <- main_df[match(barcode_oder, main_df$Barcode),]
+
+
+
+
+summary(main_df$Fine_cluster)
+
+main_DF$Fine_cluster_final <- ifelse(main_DF$Barcode %in% main_df$Barcode,
+                                     paste(main_DF$Fine_cluster),
+                                     "Immune")
+summary(main_DF$Barcode == seur_met$Barcode)
+
+id_vector <- main_DF$Fine_cluster_final
+
+seur$Fine_cluster <- id_vector
+
+
+
+
+DimPlot(seur, reduction = "umap", label = F,cols = mycoloursP,
+        group.by = "Fine_cluster")
+
+
+
+
+```
+
+
+
+```{r}
+saveRDS(seur, here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+
+```

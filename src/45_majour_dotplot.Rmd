@@ -1,0 +1,533 @@
+---
+title: "dot plot fine clustering"
+author: "Luise A. Seeker"
+date: "29/10/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(ggsci)
+library(here)
+library(ggplot2)
+
+```
+
+
+
+```{r}
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "data_for_publication",
+                    "HCA_complete_dataset.RDS"))
+
+FeaturePlot(nad_ol, features = c("LAMA2", "MBP"))
+
+```
+
+```{r}
+levels(as.factor(seur$Fine_cluster))
+
+
+
+```
+
+
+```{r}
+
+order<- c("Neur",
+                                                          "RELN_4",
+                                                          "RELN_3",
+                                                          "RELN_2",
+                                                          "RELN_1",
+                                                          "Ex_4",
+                                                          "Ex_3",
+                                                          "Ex_2",
+                                                          "Ex_1",
+                                                          "In_9",
+                                                          "In_8",
+                                                          "In_7",
+                                                          "In_6",
+                                                          "In_5",
+                                                          "In_4",
+                                                          "In_3",
+                                                          "In_2",
+                                                          "In_1",
+                                                          "vSMC",
+                                                          "Mural_vein_1",
+                                                          "Mural_cap_2",
+                                                          "Mural_cap_1",
+                                                          "EC_art_3",
+                                                          "EC_art_2",
+                                                          "EC_art_1",
+                                                          "EC_cap_5",
+                                                          "EC_cap_4",
+                                                          "EC_cap_3",
+                                                          "EC_cap_2",
+                                                          "EC_cap_1",
+                                                          "Immune",
+                                                          "BAM",
+                                                          "Microglia_5",
+                                                          "Microglia_4",
+                                                          "Microglia_3",
+                                                          "Microglia_2",
+                                                          "Microglia_1",
+                                                          "AS_12",
+                                                          "AS_11",
+                                                          "AS_10",
+                                                          "AS_9",
+                                                          "AS_8",
+                                                          "AS_7",
+                                                          "AS_6",
+                                                          "AS_5",
+                                                          "AS_4",
+                                                          "AS_3",
+                                                          "AS_2",
+                                                          "AS_1",
+                                                          "Oligo_F",
+                                                          "Oligo_E",
+                                                          "Oligo_D",
+                                                          "Oligo_C",
+                                                          "Oligo_B",
+                                                          "Oligo_A",
+                                                          "COP_C",
+                                                          "COP_B",
+                                                          "COP_A",
+                                                          "OPC_B",
+                                                          "OPC_A")
+
+invert_order <- rev(order)
+seur$Fine_cluster <- factor(seur$Fine_cluster, levels = invert_order)
+
+```
+
+
+```{r}
+
+Idents(seur) <- "Fine_cluster"
+
+                           
+  
+DotPlot(seur, features = c("SNAP25", "RBFOX3", "PLP1"), group.by = "Tissue")
+
+```
+
+
+
+```{r}
+
+genes <- c("GAPDH",
+                           "PDGFRA",
+                           "PAX3",
+                           "SLC22A3",
+                           "SEMA3D",
+                           "NELL1",
+                           "L3MBTL4",
+                           "LINC01965",
+                           "GAP43",
+                           "TRIO",
+                           "ATRNL1",
+                           "GPC5",
+                           "SPARCL1",
+                           "TRPM3",
+                           "GRIA1",
+                           "GPR17",
+                           "PRICKLE1",
+                           "SGK1",
+                           "BCAN",
+                           "PLP1",
+                           "MAG",
+                           "MOG",
+                           "MYRF",
+                           "OPALIN",
+                           "PLXDC2",
+                           "LAMA2",
+                           "PALM2",
+                           "HHIP",
+                           "RBFOX1",
+                           "RASGRF1",
+                           "FMN1",
+                           "AFF3",
+                           "LGALS1",
+                           "SPARC",
+                           "DHCR24",
+                           "HCN2",
+                           "TUBA1A",
+                           "TUBB2B",
+                           "VAMP3",
+                           "PMP2",
+                           #Astrocytes
+                           "GJA1",
+                           "GFAP",
+                           #AS_1
+                           "MDGA2",
+                           "EDNRB",
+                           "PPFIA2",
+                           "KCNJ16",
+                           # AS_2
+                           "APLNR",
+                           "CDC42EP4",
+                           "PAMR1",
+                           #AS_3
+                           "LINC01094",
+                           "PRKAG2",
+                           "BHLHE40",
+                           #AS_4
+                           "NTNG2",
+                           "ATP10B",
+                           #AS_5
+                           "LINC00609",
+                           "EMID1",
+                           "CTSH",
+                           #AS_6
+                           "GABRA2",
+                           "EPHA6",
+                           "EPHB1",
+                           #AS_7
+                           "SLC6A11",
+                           "PAK3",
+                           "GRM5",
+                           "VAV3",
+                           "PTPRT",
+                           #AS_8
+                           "ST18",
+                           "SLC24A2",
+                           "RNF220",
+                           "ELMO1",
+                           "NKAIN2",
+                           #AS_9
+                           "CFAP43",
+                           "SPAG17",
+                           "DNAH11",
+                           #AS_10
+                           "SPOCK1",
+                           "SPSB1",
+                           "SAMD4A",
+                           "CLIP1",
+                           "MYO1E",
+                           #AS_11,
+                           "S100B",
+                           "TMSB4X",
+                           "FTL",
+                           "MTURN",
+                           #AS_12
+                           "YWHAG",
+                           "ATP1B1",
+                           "GNAS",
+                           "NEFM",
+                           #Microglia
+                           "CD74", 
+                           "P2RY12",
+                           #MI_1
+                           "P2RY12",
+                           "RASGEF1C",
+                           #MI_2
+                           "GPNMB",
+                           "MITF",
+                           "APOC1",
+                           "CPM",
+                           #MI_3
+                           "PCDH9",
+                           "EDIL3",
+                           "PTPRD",
+                           #MI_4
+                           "HIF1A",
+                           "GNA13",
+                           "RGS1",
+                           "RANBP2",
+                           "FAM110B",
+                           #MI_5
+                           "NRG3",
+                           "RNF219-AS1",
+                           "SORBS1",
+                           "CTNND2",
+                           #BAM
+                           "F13A1",
+                           "CD163",
+                           "LYVE1",
+                           "MRC1",
+                           "PID1",
+                           # Immune
+                           "HLA-A", 
+                           "PTPRC",
+                           #vascular cells
+                           "CLDN5", 
+                           "NOTCH3",
+                           #EC_cap_1
+                           "ATP10A",
+                           "SPOCK3",
+                           "SLC39A10",
+           #EC_cap_2
+           "JCAD",
+           "ITM2A",
+           "NRXN1",
+           "SLC26A3",
+           "INO80D",
+           #EC_cap3
+           "SLC9A9",
+           "HDAC9",
+           "RBM47",
+           #EC_cap_4
+           "PCDH9",
+           "TF",
+           "IL1RAPL1",
+           "ARL15",
+           #EC_cap_5
+           "PTPRC",
+           "SKAP1",
+           "ARHGAP15",
+           "CD247",
+           #EC_art_1
+           "PELI1",
+           "ARL15",
+           "RALGAPA2",
+           "BACE2",
+           "IL1R1",
+           #EC_art_2
+           "ACKR1",
+           "AQP1",
+           #EC_art_3
+           "S100A6",
+           "TIMP1",
+           "CTSL",
+           "TFPI2",
+           "MGP",
+           #Mural_cap_1 abd Mural_cap_2
+           "GPC5",
+           "GRM3",
+           "GRM8",
+           "SLC38A11",
+           "SLC20A2",
+           "FRMD3",
+           #Mural_vein_1
+           "CEMIP",
+           "FLRT2",
+           "BICC1",
+           "MIR99AHG",
+           "NTRK3",
+           #vSMC
+           "ACTA2",
+           "MYH11",
+           "TAGLN",
+           "ZFHX3",
+           "SLIT3",
+           
+           #neurons
+           "SNAP25",
+           "RBFOX3",
+           #inhibitory
+           "GAD1",
+           "GAD2",
+           #IN_1
+           "GPC5",
+           "PCDH15",
+           "HTR2C",
+           
+           #IN_2
+           "SCG2",
+           "PEG3",
+           "INPP5F",
+           "SLC22A17",
+           "VGF",
+           
+           #IN_3
+           "NEFH",
+           "NEFM",
+           "SPP1",
+           "INA",
+           "VAMP1",
+           "PVALB",
+           
+           #IN_4
+           "SOX6",
+           "NXPH1",
+           "KCNC2",
+           "GRIK1",
+           "SST",
+           
+           #IN_5
+           "CCK",
+           "NPAS3",
+           "ADARB2",
+           "DLX6-AS1",
+           "PRELID2",
+           "CNR1",
+           "FBXL7",
+           
+           #IN_6
+           "INPP4B",
+           "UNC5C",
+           "PHACTR2",
+           "VCAN",
+           "SYN3",
+           
+           #IN_7
+           "NEAT1",
+           "LHFPL3",
+           "NTNG1",
+           "FHIT",
+           
+           #IN_8
+           "TSHZ2",
+           "EBF2",
+           "EBF1",
+           "KIRREL3",
+           
+           #IN_9
+           "LHX6",
+           "SERPINI1",
+           "RAB3B",
+           "TAC1",
+           "NOS1",
+           
+           #excitatory
+           "SLC17A7",
+           
+           #EX_1
+           "ATRNL1",
+           "NECAB1",
+           "KCTD16",
+           
+           #EX_2
+           "HS3ST4",
+           "MGAT4C",
+           "LMO3",
+           "SATB2",
+           "THSD7B",
+           
+           #EX_3
+           "ENC1",
+           "SLC17A7",
+           "ARPP19",
+           
+           #RELN 
+           
+           "RELN",
+           "TIAM1",
+           "CADPS2",
+           "MSRA",
+           "ZNF385D",
+           
+           
+           #RELN_1
+           "SNAP25-AS1",
+          
+           #RELN_2
+           "ERVMER61-1",
+           
+           #RELN_3
+           "RPL3",
+           "RPS27A",
+           "RPL37A",
+           "CHGB",
+           
+           #RELN_4
+           "SST",
+           "CTNNA3",
+           "QKI",
+           "SCD",
+           
+           #Neur
+           "C1QL1",
+           "CRH",
+           "GPR88",
+           "POU4F1",
+           "CALB1",
+           "CALB2" )
+
+invert_genes <- rev(genes)
+
+DotPlot(seur, features = unique(genes))+ theme(axis.text.x = element_text(angle = 90))
+
+
+DotPlot(seur, features = unique(invert_genes))+
+  theme(axis.text.x=element_text(angle=90,hjust=0.9,vjust=0.2)) + coord_flip()
+
+
+```
+
+
+```{r}
+seur@meta.data$Fine_cluster_rename <- ifelse(seur@meta.data$Fine_cluster ==
+                                               "AS_9", "AS_9_ep",
+                                             paste(seur@meta.data$Fine_cluster))
+
+new_order<- c("Neur",
+                                                          "RELN_4",
+                                                          "RELN_3",
+                                                          "RELN_2",
+                                                          "RELN_1",
+                                                          "Ex_4",
+                                                          "Ex_3",
+                                                          "Ex_2",
+                                                          "Ex_1",
+                                                          "In_9",
+                                                          "In_8",
+                                                          "In_7",
+                                                          "In_6",
+                                                          "In_5",
+                                                          "In_4",
+                                                          "In_3",
+                                                          "In_2",
+                                                          "In_1",
+                                                          "vSMC",
+                                                          "Mural_vein_1",
+                                                          "Mural_cap_2",
+                                                          "Mural_cap_1",
+                                                          "EC_art_3",
+                                                          "EC_art_2",
+                                                          "EC_art_1",
+                                                          "EC_cap_5",
+                                                          "EC_cap_4",
+                                                          "EC_cap_3",
+                                                          "EC_cap_2",
+                                                          "EC_cap_1",
+                                                          "Immune",
+                                                          "BAM",
+                                                          "Microglia_5",
+                                                          "Microglia_4",
+                                                          "Microglia_3",
+                                                          "Microglia_2",
+                                                          "Microglia_1",
+                                                          "AS_12",
+                                                          "AS_11",
+                                                          "AS_10",
+                                                          "AS_9_ep",
+                                                          "AS_8",
+                                                          "AS_7",
+                                                          "AS_6",
+                                                          "AS_5",
+                                                          "AS_4",
+                                                          "AS_3",
+                                                          "AS_2",
+                                                          "AS_1",
+                                                          "Oligo_F",
+                                                          "Oligo_E",
+                                                          "Oligo_D",
+                                                          "Oligo_C",
+                                                          "Oligo_B",
+                                                          "Oligo_A",
+                                                          "COP_C",
+                                                          "COP_B",
+                                                          "COP_A",
+                                                          "OPC_B",
+                                                          "OPC_A")
+
+new_invert_order <- rev(new_order)
+seur$Fine_cluster_rename <- factor(seur$Fine_cluster_rename, levels = new_invert_order)
+
+
+
+Idents(seur) <- "Fine_cluster_rename"
+DotPlot(seur, features = unique(invert_genes))+
+  theme(axis.text.x=element_text(size = 10, angle=90,hjust=0.9,vjust=0.2)) + 
+  coord_flip()
+```
+
+
+

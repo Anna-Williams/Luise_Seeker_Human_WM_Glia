@@ -1,0 +1,221 @@
+---
+title: "Sex differences in HSP genes"
+author: "Luise A. Seeker"
+date: "13/09/2022"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(here)
+library(ggplot2)
+library(gridExtra)
+library(data.table)
+library(ggvenn)
+```
+
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+
+```
+
+```{r}
+nad_ol <-  readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+
+
+```
+
+
+
+Load data
+
+
+
+
+Filter for opcs
+```{r}
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+opcs <- subset(nad_ol, ident = c("OPC_A", "OPC_B"))
+
+```
+
+Filter for oligos
+```{r}
+
+oligos <- subset(nad_ol, ident = c("OPC_A", "OPC_B", "COP_A", "COP_B", 
+                                   "COP_C"), invert = TRUE)
+
+```
+
+```{r}
+Idents(opcs) <- "gender"
+
+sex_markopc <- FindMarkers(opcs, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE,
+                        test.use = "MAST")
+
+sex_markopc$cell_type <- "opcs"
+
+```
+
+
+```{r}
+Idents(oligos) <- "gender"
+
+sex_mark_ol <- FindMarkers(oligos, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE,
+                        test.use = "MAST")
+
+sex_mark_ol$cell_type <- "oligodendrocytes"
+
+```
+
+```{r}
+oligos_sex_mark <- rbind(sex_mark_ol, sex_markopc)
+
+```
+
+
+Read in astrocyte and microglia data
+
+```{r}
+astrocytes <- read.csv(here("outs",
+                            "astrocytes",
+                            "sex_marker_list_astro",
+                            "astro_sex_marker.csv"))
+astrocytes$cell_type <- "astrocytes"
+
+microglia <- read.csv(here("outs",
+                            "microglia_macrophages",
+                            "sex_marker_list_mm",
+                            "mm_sex_marker.csv"))
+microglia$cell_type <- "microglia"
+
+as_micro <- rbind(astrocytes, microglia)
+```
+
+Find Heat shock genes in oligodendroglia
+```{r}
+hsp <- oligos_sex_mark[rownames(oligos_sex_mark) %like% "HSP", ] 
+dnaj <- oligos_sex_mark[rownames(oligos_sex_mark) %like% "DNAJ", ]
+cct <- oligos_sex_mark[rownames(oligos_sex_mark) %like% "CCT", ]
+mmk <- oligos_sex_mark[rownames(oligos_sex_mark) %like% "MMK", ]
+bbs<- oligos_sex_mark[rownames(oligos_sex_mark) %like% "BBS", ]
+
+oligo_hsp <- rbind(hsp, dnaj)
+oligo_hsp$gene <- rownames(oligo_hsp)
+```
+
+
+Find Heat shock genes in astrocytes and microglia
+```{r}
+
+as_micro$hsp <- ifelse(as_micro$gene %like% "HSP", "hsp", "NA")
+as_micro$dnaj_am <- ifelse(as_micro$gene %like% "DNAJ", "dnaj", "NA") 
+as_micro$cct_am <- ifelse(as_micro$gene %like% "CCT", "dnaj", "NA") 
+as_micro$mmk_am <- ifelse(as_micro$gene %like% "MMK", "mmk", "NA")   
+as_micro$bbs_am<- ifelse(as_micro$gene %like% "BBS", "bbs", "NA")   
+
+as_micro_fil <- subset(as_micro, as_micro$hsp == "hsp")
+
+as_micro_hsp <- data.frame(p_val = as_micro_fil$p_val,
+                           avg_log2FC = as_micro_fil$avg_log2FC,
+                           pct.1 = as_micro_fil$pct.1,
+                           pct.2 = as_micro_fil$pct.2,
+                           p_val_adj = as_micro_fil$p_val_adj,
+                           gene = as_micro_fil$gene,
+                           cell_type = as_micro_fil$cell_type)
+
+out_data <- rbind(as_micro_hsp, oligo_hsp)
+```
+
+
+
+Find other genes that are expressed in more than one glia type
+
+```{r}
+ol_as_mi <- subset(oligos_sex_mark, rownames(oligos_sex_mark) %in% as_micro$gene)
+
+```
+
+```{r}
+ol_genes <- rownames(sex_mark_ol)
+opc_genes<- rownames(sex_markopc)
+
+# the oligodendroglia data is male only and as it is a contrast between two 
+#factors female data is the same with an inversed direction. I am removing the 
+# female results from the other two datasets
+male_as <- subset(astrocytes, astrocytes$cluster == "M")
+male_mi <- subset(microglia, microglia$cluster == "M")
+as_genes <- male_as$gene
+mi_genes <- male_mi $gene
+
+gene_list <- list()
+gene_list[[1]] <- ol_genes
+gene_list[[2]] <- opc_genes
+gene_list[[3]] <- as_genes
+gene_list[[4]] <- mi_genes
+
+names(gene_list) <- c("Oligodendrocytes", "OPCs", "Astrocytes", "Microglia")
+ggvenn(gene_list)
+```
+```{r}
+
+fil_sex_mark_ol <- subset(sex_mark_ol, abs(sex_mark_ol$pct.1) > 0.25)
+fil_sex_mark_ol <- subset(fil_sex_mark_ol, fil_sex_mark_ol$p_val_adj < 0.05)
+
+
+fil_sex_mark_opc <- subset(sex_markopc, abs(sex_markopc$pct.1) > 0.25)
+fil_sex_mark_opc<- subset(fil_sex_mark_opc, fil_sex_mark_opc$p_val_adj < 0.05)
+
+ol_genes_fil <- rownames(fil_sex_mark_ol)
+opc_genes_fil<- rownames(fil_sex_mark_opc)
+
+
+as_genes_fil <- subset(male_as, male_as$p_val < 0.05)
+mi_genes_fil <- subset(male_mi, male_mi$p_val < 0.05)
+
+as_genes_fil <- as_genes_fil$gene
+mi_genes_fil <- mi_genes_fil$gene
+
+gene_list_fil <- list()
+gene_list_fil[[1]] <- ol_genes_fil
+gene_list_fil[[2]] <- opc_genes_fil
+gene_list_fil[[3]] <- as_genes_fil
+gene_list_fil[[4]] <- mi_genes_fil
+
+names(gene_list_fil) <- c("Oligodendrocytes", "OPCs", "Astrocytes", "Microglia")
+ggvenn(gene_list_fil)
+```
+
+
+Intersect genes
+```{r}
+intersect(gene_list_fil[[1]], intersect(gene_list_fil[[2]], intersect(gene_list_fil[[3]], gene_list[[4]])))
+```
+
+
+Session info
+
+```{r}
+
+sessionInfo()
+```

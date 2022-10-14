@@ -1,0 +1,189 @@
+---
+title: "OPCs"
+author: "Luise A. Seeker"
+date: "17/12/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(ggsci)
+library(here)
+library(EnhancedVolcano)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+```{r}
+nad_ol <- readRDS(here("data",
+                       "single_nuc_data",
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+```
+
+
+```{r}
+opcs <- subset(nad_ol, ident = c("OPC_A", "OPC_B"))
+
+```
+
+
+```{r}
+VlnPlot(opcs, features = "GPNMB", split.by = "AgeGroup", group.by = "AgeGroup")
+
+```
+```{r}
+FeaturePlot(opcs, features = "GPNMB", split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(opcs, features = "GPNMB", split.by = "AgeGroup", group.by = "ol_clusters_named")
+
+```
+
+
+```{r}
+Idents(opcs) <- "AgeGroup"
+
+age_m <- FindAllMarkers(opcs, 
+                        only.pos = TRUE, 
+                        min.pct = 0.25, 
+                        logfc.threshold = 0.25,
+                        test.use = "MAST")
+
+
+```
+
+```{r}
+Idents(opcs) <- "AgeGroup"
+age_old <- FindMarkers(opcs, 
+                       ident.1 = "Old", 
+                       ident.2 = "Young", 
+                        only.pos = FALSE, 
+                        min.pct = 0.25, 
+                        logfc.threshold = 0.25,
+                        test.use = "MAST")
+
+EnhancedVolcano(age_old,
+    lab = rownames(age_old),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.5,
+    title = "Old vs. Young",
+    subtitle = "OPCs",
+    selectLab = c('PLP1','EBF1','LRMDA',
+      'ZFPM2','RALYL','KOND2','COL20A1','RPL13'),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5)
+
+
+  
+```
+```{r}
+age_old_s <- subset(age_old, age_old$p_val_adj < 0.05 & 
+                      (age_old$avg_log2FC > 0.5 |
+                         age_old$avg_log2FC < -0.5))
+
+```
+
+```{r}
+Idents(opcs) <- "gender"
+
+age_male <- FindMarkers(opcs, 
+                       ident.1 = "M", 
+                       ident.2 = "F", 
+                        only.pos = FALSE, 
+                        min.pct = 0.25, 
+                        logfc.threshold = 0.25,
+                        test.use = "MAST")
+
+EnhancedVolcano(age_male,
+    lab = rownames(age_male),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.5,
+    title = "Male vs. Female",
+    subtitle = "OPCs")
+
+
+```
+
+```{r}
+
+
+VlnPlot(opcs, 
+        features = "SLC6A1-AS1", 
+        split.by = "gender", 
+        group.by = "ol_clusters_named") + 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+```
+
+
+```{r}
+
+
+VlnPlot(opcs, 
+        features = "HIF3A", 
+        split.by = "gender", 
+        group.by = "ol_clusters_named") + 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+```
+
+
+```{r}
+
+
+VlnPlot(opcs, 
+        features = "HSPA1A", 
+        split.by = "gender", 
+        group.by = "ol_clusters_named") + 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+```
+
+```{r}
+
+FeaturePlot(opcs, 
+            features = "EBF1", 
+            split.by = "ageSex",
+            ncol = 2)
+```
+
+```{r}
+
+FeaturePlot(opcs, features = c("EBF1", "PAX3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+
+```{r}
+
+sessionInfo()
+```

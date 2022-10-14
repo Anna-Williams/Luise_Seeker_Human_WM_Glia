@@ -1,0 +1,122 @@
+---
+title: "08_CellCycle_annotation"
+author: "Luise A. Seeker"
+date: "05/02/2021"
+output: html_document
+---
+For the cluster quality control it may be helpful to identify mitotic cells. 
+Here the standard Seurat method for cell cycle annotation is used. 
+
+https://satijalab.org/seurat/archive/v3.1/cell_cycle_vignette.html
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library("scales")
+library(RCurl)
+library(AnnotationHub)
+
+
+```
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+```{r}
+
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_seur_norm_raw.RDS")
+
+```
+
+
+Annotate for cell cycle
+
+```{r}
+exp_mat <- read.table(file = "/Users/lseeker/Documents/Work/HumanCellAtlas/CellCycleAnnotationFiles/nestorawa_forcellcycle_expressionMatrix.txt", header = TRUE, 
+    as.is = TRUE, row.names = 1)
+
+# A list of cell cycle markers, from Tirosh et al, 2015, is loaded with Seurat.  We can
+# segregate this list into markers of G2/M phase and markers of S phase
+s_genes <- cc.genes$s.genes
+g2m_genes <- cc.genes$g2m.genes
+
+
+```
+
+```{r}
+
+seur_comb <- CellCycleScoring(seur_comb, s.features = s_genes, 
+                              g2m.features = g2m_genes, 
+                              set.ident = TRUE)
+
+# view cell cycle scores and phase assignments
+head(seur_comb$Phase)
+
+
+```
+
+```{r, fig.width=7, fig.height=6, fig.fullwidth=TRUE}
+DimPlot(seur_comb, 
+        label = F, 
+        cols = mycoloursP[2:50], 
+        group.by = "Phase")
+
+
+```
+
+```{r, fig.width=10, fig.height=6, fig.fullwidth=TRUE}
+DimPlot(seur_comb, 
+        label = F, 
+        cols = mycoloursP[2:50], 
+        group.by = "Phase",
+        split.by = "Phase")
+
+
+```
+
+Plot S-phase genes
+```{r, fig.width=10, fig.height=50, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = s_genes,
+            ncol = 2)
+
+
+
+```
+
+
+Plot G2M-phase genes
+```{r, fig.width=10, fig.height=60, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = g2m_genes,
+            ncol = 2)
+
+
+
+```
+
+
+I think the annotation does not work well for our CNS samples. It indicates
+that a lot more cells are activel dividing than there should be. 
+And looking at the genes used for the cell cycle annotation, a lot of them are
+not expressed in our tissue.
+
+
+```{r}
+
+sessionInfo()
+```

@@ -1,0 +1,694 @@
+---
+title: "11_DE_marker_genes"
+author: "Luise A. Seeker"
+date: "16/03/2021"
+output: html_document
+---
+
+# Load libraries
+
+```{r, echo = F}
+
+library(Seurat)
+
+library(dplyr)
+library(viridis) 
+library(ggsci)
+library(scales)
+library(SingleCellExperiment)
+library(EnhancedVolcano)
+library(NMF)
+library(pheatmap)
+library(dendextend)
+library(limma)
+library(StatMeasures)
+library(ggplot2)
+library(ggdendro)
+library(zoo)
+library(clustree)
+library(philentropy)
+library(bluster)
+library(scclusteval)
+library(gtools)
+
+#For monocle pseudotime:
+library(monocle3)
+library(SeuratWrappers)
+
+library(here) #reproducible file paths
+```
+
+
+# Pick colour pallets
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+# Load data
+```{r}
+nad_ol<- readRDS(nad_ol, "/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs_LS.RDS")
+```
+
+```{r}
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_annotated_nadine/srt_anno_01.RDS")
+
+```
+
+# Identification of marker genes
+```{r}
+
+
+int_res_all_mark <- function(seur_obj, 
+                             int_cols,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.6,
+                             avg_log = 1.2,
+                             save_dir = getwd(),
+                             test_use = "MAST"
+                             ){
+  for(i in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[i]
+    all_mark <- FindAllMarkers(seur_obj, 
+                               only.pos = only_pos, 
+                               min.pct = min_pct, 
+                               logfc.threshold = logfc_threshold,
+                               test.use = test_use)
+    fil_mark<- subset(all_mark, 
+                      all_mark$pct.1 > fil_pct_1 & 
+                        all_mark$pct.2 < fil_pct_2 )
+    
+    write.csv(all_mark, paste(save_dir, "/all_mark", int_cols[i], ".csv", sep = "" ))
+    write.csv(fil_mark, paste(save_dir, "/fil_mark", int_cols[i], ".csv", sep = "" ))
+    
+  }
+}
+
+
+
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes")
+int_res_all_mark(nad_ol, 
+                 int_cols = c("RNA_snn_res.0.01", 
+                              "RNA_snn_res.0.05",
+                              "RNA_snn_res.0.1",
+                              "RNA_snn_res.0.2",
+                              "RNA_snn_res.0.3",
+                              "RNA_snn_res.0.4",
+                              "ol_clusters_named"),
+                 save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes")
+
+
+```
+
+Pairwise comparison of neighbouring clusters 
+
+
+```{r}
+
+clust_id_list_2 <- list(list("OPC_A", "OPC_B"), list("OPC_B", "OPC_A"), 
+                      list("Oligo_A", "Oligo_B"), list("Oligo_B", "Oligo_A"),
+                      list("Oligo_A", "Oligo_E"), list("Oligo_E", "Oligo_A"), 
+                      list("Oligo_E", "Oligo_B"), list("Oligo_B", "Oligo_E"),
+                      list("Oligo_E", "Oligo_D"), list("Oligo_D", "Oligo_E"), 
+                      list("Oligo_D", "Oligo_B"), list("Oligo_B", "Oligo_D"),
+                      list("Oligo_D", "Oligo_C"), list("Oligo_C", "Oligo_D"), 
+                      list("Oligo_C", "Oligo_B"), list("Oligo_B", "Oligo_C"),
+                      list("Oligo_F", "Oligo_D"), list("Oligo_D", "Oligo_F"),
+                      list("Oligo_F", "Oligo_E"), list("Oligo_E", "Oligo_F"))
+
+
+
+pairwise_mark <- function(seur_obj, 
+                             int_cols,
+                             clust_id_list,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.1,
+                             save_dir = getwd(),
+                             test_use = "MAST"){
+  for(k in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[k]
+    for(i in 1: length(clust_id_list)){
+      clust_mark <- FindMarkers(seur_obj, 
+                                ident.1 = clust_id_list[[i]][[1]], 
+                                ident.2 = clust_id_list[[i]][[2]],
+                                min.pct = min_pct, 
+                                test.use = test_use)
+      clust_mark$cluster <- clust_id_list[[i]][[1]]
+      clust_mark$comp_to_clust <- clust_id_list[[i]][[2]]
+      write.csv(clust_mark, 
+                paste(save_dir, 
+                      "/", 
+                      int_cols[k],
+                      "_",
+                      clust_id_list[[i]][[1]],
+                      "_",
+                      clust_id_list[[i]][[2]],
+                      ".csv", sep = "" ))
+    }
+  }
+}
+
+
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes/pairwise")
+pairwise_mark(nad_ol, 
+              int_cols = "ol_clusters_named",
+              save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes/pairwise",
+              clust_id_list = clust_id_list_2)
+
+```
+
+Read in data for plotting differentially expressed genes
+```{r}
+
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv")
+  myfiles = lapply(paste(file_dir, temp, sep = "/"), read.csv)
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                       dat$pct.1 > pct_1 & 
+                       dat$pct.2 < pct_2)
+    if(pairwise == TRUE){
+      
+      top10 <- av_log_fil %>% top_n(10, avg_log2FC)
+      top10$gene <- top10$X
+    }else{
+    av_log_fil$cluster <- as.character(av_log_fil$cluster)
+    top10 <- av_log_fil %>% group_by(cluster) %>% 
+      top_n(10, avg_log2FC)
+    }
+    
+    if(i ==1){
+      fil_genes <- top10
+    }else{
+      fil_genes <- rbind(fil_genes, top10)
+    }
+    
+    fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+    
+  }
+  
+  return(fil_genes)
+}
+
+
+fil_genes <- gen_mark_list(file_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes")
+
+fil_genes_pw <- gen_mark_list(file_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes/pairwise",
+                              pairwise = TRUE)
+
+int_genes <- c(fil_genes$gene, fil_genes_pw$gene)
+int_genes <- unique(int_genes)
+
+
+```
+
+```{r}
+# every cell name
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+cluster_averages <- AverageExpression(nad_ol, group.by = "ol_clusters_named",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$cluster <- factor(levels(as.factor(nad_ol@meta.data$ol_clusters_named)), 
+                                             levels = c("OPC_A", "OPC_B", "COP_A", "COP_B", "COP_C", 
+                                                        "Oligo_A", "Oligo_B", "Oligo_C", "Oligo_D", 
+                                                        "Oligo_E", "Oligo_F"))
+
+
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+                   angle = 90,size = 4,
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F) + 
+  theme(text = element_text(size = 7)) + 
+  scale_fill_gradientn(colors = c("blue", "white", "red")) 
+```
+
+
+
+
+```{r, fig.width = 8, fig.height=11}
+#dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis")
+
+save_dir <- here("outs", "oligos", "cluster_hm")
+dir.create(save_dir, recursive = T)
+png(here(save_dir, "oligo_hm.png"), height =2500, width =1100)
+print(hm_av)
+dev.off()
+```
+
+```{r}
+
+# Make a 6x6 inch image at 300dpi
+ppi <- 600
+png(here(save_dir, "oligo_hm_300_ppi.png"), width=8.25*ppi, height=11.75*ppi, 
+    res=ppi)
+print(hm_av)
+dev.off()
+
+
+
+```
+
+```{r}
+
+
+hm_av_2 <- DoHeatmap(object = cluster_averages, 
+                   angle = 90,size = 4,
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F) + 
+  theme(text = element_text(size = 7)) + 
+  scale_fill_gradientn(colors = c("blue", "white", "red")) +NoLegend()
+```
+
+
+
+
+```{r}
+
+pdf(here(save_dir, "oligo_hm.pdf"), paper = "a4")
+print(hm_av)
+dev.off()
+
+```
+
+
+```{r, fig.width = 8, fig.height=11}
+#dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis")
+
+save_dir <- here("outs", "oligos", "cluster_hm")
+dir.create(save_dir, recursive = T)
+png(here(save_dir, "oligo_hm_noLegend.png"), height =2500, width =1100)
+print(hm_av_2)
+dev.off()
+
+```
+
+
+```{r}
+
+# Make a 6x6 inch image at 300dpi
+ppi <- 600
+png(here(save_dir, "oligo_hm_300_ppi_noLegend.png"), width=8.25*ppi, height=11.75*ppi, 
+    res=ppi)
+print(hm_av_2)
+dev.off()
+
+
+
+```
+
+
+```{r, fig.width=15, fig.height = 5}
+
+DoHeatmap(object = nad_ol, features = int_genes, 
+          label = TRUE, 
+          group.by = 'ol_clusters_named')
+```
+
+
+```{r, fig.width=20, fig.height = 4}
+
+
+
+DotPlot(nad_ol, group.by = "ol_clusters_named", features = int_genes) + RotatedAxis()
+```
+# save VlnPlots
+
+
+```{r}
+
+save_vln_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 10,
+                           plotheight = 20,
+                           plotwidth = 8,
+                           group_by = Idents(seur_obj),
+                           pt_size = 0.1,
+                           n_col = 1){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+        
+          pdf(paste(save_dir, "/clust_marker_vln_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          finalPlot<-VlnPlot(seur_obj, features = unlist(gene_groups[i]),
+                             group.by = group_by, pt.size= pt_size, ncol=1)
+          print(finalPlot)
+          graphics.off()
+          
+        }
+      }
+      
+     
+save_vln_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis",
+               group_by = "ol_clusters_named")
+
+
+save_vln_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis",
+               group_by = "ol_clusters_named",
+               pt_size = 0,
+               plotheight = 30)
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/vln/whole_dataset",
+           recursive = T)
+
+save_vln_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/vln/whole_dataset",
+               group_by = "clusters_named",
+               pt_size = 0,
+               plotheight = 30)
+               
+               
+
+```
+
+
+# save FeaturePlots
+
+
+```{r}
+
+save_feat_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 16,
+                           plotheight = 18,
+                           plotwidth = 20,
+                           split_by = "NULL",
+                           n_col = 4){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+      if(split_by != "NULL"){
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col, split.by = split_by)
+      }else{
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col)
+      }
+        
+          pdf(paste(save_dir, "/clust_marker_feat_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          
+          print(feature_plot)
+          
+          graphics.off()
+          
+        }
+      }
+      
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Feature_pl/oligodendroglia", recursive = T)
+     
+save_feat_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Feature_pl/oligodendroglia")
+
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Feature_pl/all_cell_types")
+save_feat_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Feature_pl/all_cell_types")
+               
+               
+
+```
+
+
+# Differential gene expression with age 
+
+```{r}
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex")
+int_res_all_mark(nad_ol, 
+                 int_cols = c("AgeGroup", 
+                              "ageSex",
+                              "gender"),
+                 logfc_threshold = 0.1,
+                 fil_pct_1 = 0.1,
+                 fil_pct_2 = 0.6,
+                 avg_log = 0.1,
+                 save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex")
+
+
+dir <-"/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex"
+
+temp_dat <- list.files(path = dir,
+                    pattern="*.csv")
+  
+myfiles = lapply(paste(dir, temp_dat, sep = "/"), read.csv)
+  
+  
+age_group_dat <- myfiles[[1]]
+
+
+
+age_fil <- subset(age_group_dat,
+                       age_group_dat$pct.1 > 0.2 & 
+                       age_group_dat$pct.2 < 0.6)
+
+Idents(nad_ol) <- "AgeGroup"
+
+cluster_averages <- AverageExpression(nad_ol, group.by = "AgeGroup",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$ageGroup <- factor(levels(as.factor(nad_ol@meta.data$AgeGroup)), 
+                                             levels = c("Old", "Young"))
+
+    
+    
+hm_av_age <- DoHeatmap(object = cluster_averages, 
+          features = age_fil$gene, 
+          label = TRUE,
+          group.by = "ageGroup",
+          group.colors = mycoloursP[15:40],
+          draw.lines = F)
+
+print(hm_av_age)
+```
+
+
+
+
+
+```{r, fig.width=8, fig.height =8}
+age_sex_genes <- c(myfiles[[1]]$gene, myfiles[[2]]$gene, myfiles[[3]]$gene)
+  
+  
+age_sex_group_dat <- rbind(myfiles[[1]],myfiles[[2]], myfiles[[3]])
+
+
+
+age_sex_fil <- subset(age_sex_group_dat,
+                      age_sex_group_dat$avg_log2FC > 0.2 &
+                       age_sex_group_dat$pct.1 > 0.2 & 
+                       age_sex_group_dat$pct.2 < 0.6)
+
+
+
+cluster_averages <- AverageExpression(nad_ol, group.by = "ageSex",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$agesex <- factor(levels(as.factor(nad_ol@meta.data$ageSex)), 
+                                             levels = c("Young women",
+                                                        "Old women", 
+                                                        "Young men",
+                                                        "Old men"))
+
+
+
+    
+    
+hm_av_age <- DoHeatmap(object = cluster_averages, 
+          features = age_sex_fil$gene, 
+          label = TRUE,
+          group.by = "agesex",
+          group.colors = mycoloursP,
+          draw.lines = F)
+
+print(hm_av_age)
+
+
+
+hm_av_age <- DoHeatmap(object = cluster_averages, 
+          features = age_sex_fil$gene, 
+          label = TRUE,
+          group.by = "agesex",
+          group.colors = mycoloursP,
+          draw.lines = F)
+
+print(hm_av_age)
+```
+```{r}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex/vln_plots")
+
+save_vln_plots(seur_obj= nad_ol, 
+               marker_list = unique(age_sex_fil$gene),
+               save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex/vln_plots",
+               group_by = "ageSex",
+               pt_size = 0.01,
+               plotheight = 30)
+
+
+```
+
+
+save feature plot
+
+```{r}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex/feat_plots")
+
+save_feat_plots(nad_ol, marker_list = unique(age_sex_fil$gene),
+                save_dir = "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mark_genes_age_sex/feat_plots",
+                           numb_genes = 8,
+                           plotheight = 32,
+                           plotwidth = 20,
+                           split_by = "ageSex",
+                           n_col = 1)
+
+```
+
+
+```{r}
+age_clust_av <- AverageExpression(nad_ol, group.by = "AgeGroup",
+                                      return.seurat = TRUE)
+age_clust_av@meta.data$ageGroup <- factor(levels(as.factor(nad_ol@meta.data$AgeGroup)), 
+                                             levels = c("Old", "Young"))
+
+hm_av_age <- DoHeatmap(object = age_clust_av, 
+          features = age_sex_fil$gene, 
+          label = TRUE,
+          group.by = "ageGroup",
+          group.colors = mycoloursP[15:40],
+          draw.lines = F)
+
+print(hm_av_age)
+
+```
+
+
+
+```{r, fig.width = 8, fig.height=11}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis")
+
+#pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Res_0_3_av_hm.pdf", 
+#    paper="a4", width=8, height=11.5)
+print(hm_av)
+
+#dev.off()
+```
+
+
+```{r}
+FeaturePlot(nad_ol, features = c("RBFOX1", "OPALIN"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0) &DarkTheme() &NoAxes()
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "OPALIN"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+FeaturePlot(nad_ol, features = c("OPALIN", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+FeaturePlot(nad_ol, features = c("AFF3", "LGALS1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+FeaturePlot(nad_ol, features = c("AFF3", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+
+
+
+
+```
+
+
+
+# Save data
+
+
+```{r}
+
+saveRDS(nad_ol, "/Users/lseeker/Documents/Work/HumanCellAtlas/SSD/HumanCellAtlas/data/2020ScranNormalised/nad_ol_merged_ScaterFiltered_ScranNormalised_CelltypeAnnotated_LS_QC.RDS")
+
+
+```
+
+
+
+
+

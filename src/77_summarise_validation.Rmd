@@ -1,0 +1,764 @@
+---
+title: "combine_val_data_cluster"
+author: "Luise A. Seeker"
+date: "01/09/2022"
+output: html_document
+---
+
+
+# Introduction
+With this script I am plotting co-expression of marker genes in the snRNAseq and
+validation datasets. 
+
+N.B. This scipts takes variables from my environment.
+
+```{r}
+library(gridExtra)
+
+```
+Take objects from environment and re-name
+
+1) SPARC OPALIN
+
+```{r}
+SPARC_opalin_olig2
+
+#sparc_opalin_long <- long_data
+
+
+sparc_opalin_seq <- subs_df_snrna_seq
+
+sparc_opalin_seq$marker <- ifelse(sparc_opalin_seq$gene_expr == "SPARC+", "Marker1+",
+                                 ifelse(sparc_opalin_seq$gene_expr == "OPALIN+",
+                                        "Marker2+", "Double+"))
+
+sparc_opalin_seq$marker <- factor(sparc_opalin_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+sparc_opalin_seq$colabel <- "SPARC OPALIN"
+
+
+```
+
+2) SPARC RBFOX1
+
+```{r}
+sparc_rbfox1_seq <- subs_data
+
+sparc_rbfox1_seq$marker <- ifelse(sparc_rbfox1_seq$gene_expr == "SPARC+", "Marker1+",
+                                 ifelse(sparc_rbfox1_seq$gene_expr == "RBFOX1+",
+                                        "Marker2+", "Double+"))
+
+sparc_rbfox1_seq$marker <- factor(sparc_rbfox1_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+sparc_rbfox1_seq$colabel <- "SPARC RBFOX1"
+
+
+# IF data
+
+sp_rb_prot <- sort_red_long
+
+```
+
+
+
+3) OPALIN RBFOX1
+
+
+```{r}
+
+
+
+opalin_rbfox1_seq <- subs_df_snrna_seq
+
+opalin_rbfox1_seq$marker <- ifelse(opalin_rbfox1_seq$gene_expr == "OPALIN+", "Marker1+",
+                                 ifelse(opalin_rbfox1_seq$gene_expr == "RBFOX1+",
+                                        "Marker2+", "Double+"))
+
+opalin_rbfox1_seq$marker <- factor(opalin_rbfox1_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+opalin_rbfox1_seq$colabel <- "OPALIN RBFOX1"
+
+```
+
+4)
+
+```{r}
+
+#FMN1 RBFOX1 data
+fmn1_rbfox1
+
+
+head(subs_subs_data)
+
+# complete long_data inclduding all quantified cells
+#fmn1_rbfox1_long <- long_data
+
+
+#FMN1 RBFOX1 snRNAseq
+
+fmn1_rbfox1_seq <- subs_df_snrna_seq
+
+fmn1_rbfox1_seq$marker <- ifelse(fmn1_rbfox1_seq$gene_expr == "FMN1+", "Marker1+",
+                                 ifelse(fmn1_rbfox1_seq$gene_expr == "RBFOX1+",
+                                        "Marker2+", "Double+"))
+
+fmn1_rbfox1_seq$marker <- factor(fmn1_rbfox1_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+fmn1_rbfox1_seq$colabel <- "FMN1 RBFOX1"
+
+```
+
+
+5) 
+```{r}
+# SPARC HCN2 snRNAseq
+
+sp_hc_seq <- subs_data
+
+sp_hc_seq$marker <- ifelse(sp_hc_seq$gene_expr == "SPARC+", "Marker1+",
+                                 ifelse(sp_hc_seq$gene_expr == "HCN2+",
+                                        "Marker2+", "Double+"))
+
+sp_hc_seq$marker <- factor(sp_hc_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+sp_hc_seq$colabel <- "SPARC HCN2"
+
+```
+
+6)
+```{r}
+
+# NELL1 PAX3 snRNAseq
+
+ne_pa_seq <- subs_data
+
+ne_pa_seq$marker <- ifelse(ne_pa_seq$gene_expr == "NELL1+", "Marker1+",
+                                 ifelse(ne_pa_seq$gene_expr == "PAX3+",
+                                        "Marker2+", "Double+"))
+
+ne_pa_seq$marker <- factor(ne_pa_seq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+ne_pa_seq$colabel <- "NELL1 PAX3"
+
+
+```
+
+```{r}
+
+snRNAseq <- rbind(sparc_opalin_seq, 
+                  fmn1_rbfox1_seq, 
+                  sparc_rbfox1_seq, 
+                  opalin_rbfox1_seq)
+
+
+snRNAseq <- rbind(snRNAseq[,2:6],
+                  sp_hc_seq)
+
+snRNAseq <- rbind(snRNAseq,
+                  ne_pa_seq)
+```
+
+
+```{r}
+snRNAseq$colabel <- factor(snRNAseq$colabel, 
+                           levels = c("SPARC OPALIN",
+                                      "SPARC RBFOX1",
+                                      "OPALIN RBFOX1",
+                                      "FMN1 RBFOX1",
+                                      "SPARC HCN2",
+                                      "NELL1 PAX3"))
+
+snRNAseq$marker <- factor(snRNAseq$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+p11 <- ggplot(snRNAseq, aes(x = colabel, y=percentage, fill = marker))+
+  geom_bar(stat="identity", position = "fill")+
+  scale_fill_manual(values= mycoloursP[24:50])  +
+  ylab("Proportion")+
+  xlab("") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = -90))
+
+p11
+```
+
+```{r}
+
+write.csv(snRNAseq, here("data",
+                         "validation_data",
+                         "snRNAseq_ol_clust_mark_coexpression.csv"))
+
+```
+
+
+# combine validation data
+
+```{r}
+# prepare sparc opalin olig2 IF data
+sp_op_prep <- data.frame(sample_id = sparc_opalin_long$sample_id,
+                         donor_id = sparc_opalin_long$donor_id,
+                         Tissue = sparc_opalin_long$tissue,
+                         keycol = sparc_opalin_long$keycol,
+                         valuecol= sparc_opalin_long$valuecol)
+
+sp_op_prep$marker <- ifelse(sp_op_prep$keycol == "Num_SPARC_OLIG2", 
+                              "Marker1+",
+                              ifelse(sp_op_prep$keycol == "Num_OLIG2_OPALIN", 
+                                     "Marker2+",
+                                     ifelse(sp_op_prep$keycol == "Num_SPARC_OLIG2_OPALIN",
+                                            "Double+", "exclude")))
+
+subs_sd_op <- subset(sp_op_prep, sp_op_prep$marker != "exclude")
+
+subs_sd_op$marker <- as.factor(subs_sd_op$marker)
+subs_sd_op$marker <- factor(subs_sd_op$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+subs_sd_op$colabel <- "SPARC OPALIN OLIG2"
+
+# prepare SPARC RNFOX1 OLIF2 IF data
+
+
+sp_rb_prep <- data.frame(sample_id = sp_rb_prot$sample_id,
+                         donor_id = sp_rb_prot$donor_id,
+                         Tissue = sp_rb_prot$tissue,
+                         keycol = sp_rb_prot$keycol,
+                         valuecol= sp_rb_prot$valuecol)
+
+sp_rb_prep$marker <- ifelse(sp_rb_prep$keycol == "Num_SPARC_OLIG2", 
+                              "Marker1+",
+                              ifelse(sp_rb_prep$keycol == "Num_RBFOX1_OLIG2", 
+                                     "Marker2+",
+                                     ifelse(sp_rb_prep$keycol == "Num_RBFOX1_SPARC_OLIG2",
+                                            "Double+", "exclude")))
+
+subs_sp_rb <- subset(sp_rb_prep, sp_rb_prep$marker != "exclude")
+
+subs_sp_rb$marker <- as.factor(subs_sp_rb$marker)
+subs_sp_rb$marker <- factor(subs_sp_rb$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+subs_sp_rb$colabel <- "SPARC RBFOX1 OLIG2"
+
+
+# prepare OPALIN RBFOX1 OLIG2 IF data
+
+op_rb_prot <- long_data
+
+op_rb_prep <- data.frame(sample_id = op_rb_prot$sample_id,
+                         donor_id = op_rb_prot$donor_id,
+                         Tissue = op_rb_prot$tissue,
+                         keycol = op_rb_prot$keycol,
+                         valuecol= op_rb_prot$valuecol)
+
+op_rb_prep$marker <- ifelse(op_rb_prep$keycol == "Num_OPALIN_OLIG2", 
+                              "Marker1+",
+                              ifelse(op_rb_prep$keycol == "Num_OLIG2_RBFOX1", 
+                                     "Marker2+",
+                                     ifelse(op_rb_prep$keycol == "Num.OPALIN..OLIG2..RBFOX1",
+                                            "Double+", "exclude")))
+
+op_rb_prep <- subset(op_rb_prep, op_rb_prep$marker != "exclude")
+
+op_rb_prep$marker <- factor(op_rb_prep$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+op_rb_prep$colabel <- "OPALIN RBFOX1 OLIG2"
+
+# prepare FMN1 RBFOX1 OLIG2 IF data
+
+fm_rb_prep <- data.frame(sample_id = fmn1_rbfox1_long$sample_id,
+                         donor_id = fmn1_rbfox1_long$donor_id,
+                         Tissue = fmn1_rbfox1_long$tissue,
+                         keycol = fmn1_rbfox1_long$keycol,
+                         valuecol= fmn1_rbfox1_long$valuecol)
+
+fm_rb_prep$marker <- ifelse(fmn1_rbfox1_long$keycol == "FMN1_OLIG2", 
+                              "Marker1+",
+                              ifelse(fm_rb_prep$keycol == "RBFOX1_OLIG2", 
+                                     "Marker2+",
+                                     ifelse(fm_rb_prep$keycol == "FMN1_RBFOX1_OLIG2",
+                                            "Double+", "exclude")))
+
+subs_fm_rb <- subset(fm_rb_prep, fm_rb_prep$marker != "exclude")
+
+subs_fm_rb$marker <- factor(subs_fm_rb$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+subs_fm_rb$colabel <- "FMN1 RBFOX1 OLIG2"
+
+# prepare SPARC HCN2 data 
+
+sp_hc_long <- long_data
+sp_hc_long$donor_id <- substr(sp_hc_long$sample_id, 1,8)
+
+sp_hc_prep <- data.frame(sample_id = sp_hc_long$sample_id,
+                         donor_id = sp_hc_long$donor_id,
+                         Tissue = sp_hc_long$tissue,
+                         keycol = sp_hc_long$keycol,
+                         valuecol= sp_hc_long$valuecol)
+
+sp_hc_prep$marker <- ifelse(sp_hc_prep$keycol == "Num_OLIG2_SPARC", 
+                              "Marker1+",
+                              ifelse(sp_hc_prep$keycol == "Num_OLIG2_HCN2", 
+                                     "Marker2+",
+                                     ifelse(sp_hc_prep$keycol == "Num_OLIG2_SPARC_HCN2",
+                                            "Double+", "exclude")))
+
+sp_hc_prep <- subset(sp_hc_prep, sp_hc_prep$marker != "exclude")
+
+sp_hc_prep$marker <- factor(sp_hc_prep$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+sp_hc_prep$colabel <- "SPARC HCN2 OLIG2"
+
+
+# NELL1 PDGFRA
+
+ne_pd_long <- long_data
+ne_pd_long$donor_id <- paste(substr(ne_pd_long$sample_id, 1,8))
+ne_pd_long$tissue <- substr(ne_pd_long$sample_id, 10,12)
+
+ne_pd_long <- data.frame(sample_id = ne_pd_long$sample_id,
+                         donor_id = ne_pd_long$donor_id,
+                         Tissue = ne_pd_long$tissue,
+                         keycol = ne_pd_long$keycol,
+                         valuecol= ne_pd_long$valuecol)
+
+ne_pd_long$marker <- ifelse(ne_pd_long$keycol == "NELL1_C2", 
+                              "Marker1+",
+                              ifelse(ne_pd_long$keycol == "PDRFRA_C1", 
+                                     "Marker2+",
+                                     ifelse(ne_pd_long$keycol == "PDGFRA_NELL1",
+                                            "Double+", "exclude")))
+
+ne_pd_long <- subset(ne_pd_long, ne_pd_long$marker != "exclude")
+
+ne_pd_long$marker <- factor(ne_pd_long$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+ne_pd_long$colabel <- "NELL1 PDGFRA"
+
+# PAX3 PDGFRA
+
+
+pa_pd_long <- long_data
+#pa_pd_long$donor_id <- paste(substr(pa_pd_long$sample_id, 1,8))
+#pa_pd_long$tissue <- substr(pa_pd_long$sample_id, 10,12)
+
+pa_pdprep <- data.frame(sample_id = pa_pd_long$sample_id,
+                         donor_id = pa_pd_long$donor_id,
+                         Tissue = pa_pd_long$tissue,
+                         keycol = pa_pd_long$keycol,
+                         valuecol= pa_pd_long$valuecol)
+
+pa_pdprep$marker <- ifelse(pa_pdprep$keycol == "PAX3_pos", 
+                              "Marker1+",
+                              ifelse(pa_pdprep$keycol == "PDGFRA_pos", 
+                                     "Marker2+",
+                                     ifelse(pa_pdprep$keycol == "double_pos",
+                                            "Double+", "exclude")))
+
+pa_pdprep <- subset(pa_pdprep, pa_pdprep$marker != "exclude")
+
+pa_pdprep$marker <- factor(pa_pdprep$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+pa_pdprep$colabel <- "PAX3 PDGFRA"
+
+
+```
+
+
+
+
+
+# combine datasets
+
+```{r}
+#prot_data <- rbind(subs_sd_op, subs_fm_rb, subs_sp_rb, op_rb_prep)
+#prot_data <- rbind(prot_data[,2:8],sp_hc_prep)
+
+prot_data <- rbind(prot_data,pa_pdprep)
+
+prot_data$colabel <- factor(prot_data$colabel, 
+                           levels = c("SPARC OPALIN OLIG2",
+                                      "SPARC RBFOX1 OLIG2",
+                                      "OPALIN RBFOX1 OLIG2",
+                                      "FMN1 RBFOX1 OLIG2",
+                                      "SPARC HCN2 OLIG2",
+                                      "NELL1 PDGFRA",
+                                      "PAX3 PDGFRA"))
+
+prot_data$marker <- factor(prot_data$marker, levels = c("Marker1+",
+                                 "Double+", "Marker2+"))
+
+
+p1 <- ggplot(prot_data, aes(x = colabel, y=valuecol, fill = marker))+
+  geom_bar(stat="identity", position = "fill")+
+  scale_fill_manual(values= mycoloursP[24:50])  +
+  ylab("Proportion")+
+  xlab("") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = -90))
+
+p1
+
+
+bool_pax3 <- prot_data$colabel == "PAX3 PDGFRA" &
+  prot_data$marker == "Marker1+"
+
+subs_prot <- prot_data[!bool_pax3,]
+
+bool_nell1 <- subs_prot$colabel == "NELL1 PDGFRA" &
+  subs_prot$marker == "Marker1+"
+
+
+subs_prot_2 <- subs_prot[!bool_nell1,]
+
+
+p2 <- ggplot(subs_prot_2, aes(x = colabel, y=valuecol, fill = marker))+
+  geom_bar(stat="identity", position = "fill")+
+  scale_fill_manual(values= mycoloursP[24:50])  +
+  ylab("Proportion")+
+  xlab("") +
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = -90))
+
+p2
+
+
+
+
+
+```
+
+
+```{r}
+grid.arrange(p11, p1, ncol = 2)
+
+```
+```{r}
+write.csv(prot_data, here("data",
+                         "validation_data",
+                         "IF_ol_clust_mark_coexpression.csv"))
+
+```
+
+```{r}
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+oligos <- subset(nad_ol, idents = c("Oligo_A",
+                                    "Oligo_B",
+                                    "Oligo_C",
+                                    "Oligo_D",
+                                    "Oligo_E",
+                                    "Oligo_F"))
+
+opcs <- subset(nad_ol, idents = c("OPC_A", "OPC_B"))
+                 
+                 
+Idents(opcs) <- "Tissue"
+ba4_opcs <-subset(opcs, idents = "BA4")
+cb_opcs <-subset(opcs, idents = "CB")
+csc_opcs <-subset(opcs, idents = "CSC")
+
+
+NELL1 <- 'NELL1' 
+PDGFRA <- 'PDGFRA' 
+NELL1.cutoff <- 1 
+PDGFRA.cutoff <- 1 
+
+#BA4
+NELL1_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = NELL1) > NELL1.cutoff & 
+                                      FetchData(ba4_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(ba4_opcs, vars = NELL1) < NELL1.cutoff))
+NELL1_PDGFRA_olig2_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(ba4_opcs, vars = NELL1) > NELL1.cutoff))
+all_cells_incluster_ba4 <- table(ba4_opcs@active.ident)
+NELL1_ba4 <-NELL1_cells_ba4/all_cells_incluster_ba4 * 100 
+# Percentage of cells in dataset that express NELL1
+
+PDGFRA_ba4 <- PDGFRA_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that express PDGFRA
+double_ba4 <- NELL1_PDGFRA_olig2_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that co-express NELL1 + PDGFRA
+
+#CB
+NELL1_cells_cb <- length(which(FetchData(cb_opcs, vars = NELL1) > NELL1.cutoff & 
+                                      FetchData(cb_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_cb <- length(which(FetchData(cb_opcs, vars = PDGFRA) > PDGFRA.cutoff& 
+                                      FetchData(cb_opcs, vars = NELL1) < NELL1.cutoff))
+NELL1_PDGFRA_olig2_cells_cb <- length(which(FetchData(cb_opcs, vars = PDGFRA) > 
+                                         PDGFRA.cutoff & FetchData(cb_opcs, vars = NELL1) >
+                                         NELL1.cutoff))
+all_cells_incluster_cb <- table(cb_opcs@active.ident)
+NELL1_cb <- NELL1_cells_cb/all_cells_incluster_cb * 100 # Percentage of cells in dataset that express NELL1
+PDGFRA_cb <- PDGFRA_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that express PDGFRA
+double_cb <- NELL1_PDGFRA_olig2_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that co-express NELL1 + PDGFRA
+
+#CSC
+NELL1_cells_csc <- length(which(FetchData(csc_opcs, vars = NELL1) > NELL1.cutoff& 
+                                      FetchData(csc_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_csc <- length(which(FetchData(csc_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(csc_opcs, vars = NELL1) < NELL1.cutoff))
+NELL1_PDGFRA_olig2_cells_csc <- length(which(FetchData(csc_opcs, vars = PDGFRA) > 
+                                          PDGFRA.cutoff & FetchData(csc_opcs, vars = NELL1) >
+                                          NELL1.cutoff))
+all_cells_incluster_csc <- table(csc_opcs@active.ident)
+NELL1_csc <- NELL1_cells_csc/all_cells_incluster_csc * 100 
+# Percentage of cells in dataset that express NELL1
+PDGFRA_csc <- PDGFRA_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that express PDGFRA
+double_csc <- NELL1_PDGFRA_olig2_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that co-express NELL1 + PDGFRA
+
+df_snrna_seq <- data.frame(Tissue = c(rep("BA4", 4), 
+                                     rep("CB", 4),
+                                     rep("CSC", 4)),
+                           gene_expr = rep(c("NELL1+", 
+                                             "PDGFRA+",
+                                             "NELL1+PDGFRA+",
+                                             "Other OPCs"), 3),
+                           percentage = c(as.numeric(NELL1_ba4), 
+                                          as.numeric(PDGFRA_ba4),
+                                          as.numeric(double_ba4),
+                                          100 - (as.numeric(NELL1_ba4)+ 
+                                          as.numeric(PDGFRA_ba4)+
+                                          as.numeric(double_ba4)),
+                                          
+                                          as.numeric(NELL1_cb), 
+                                          as.numeric(PDGFRA_cb),
+                                          as.numeric(double_cb),
+                                          100 - (as.numeric(NELL1_cb)+ 
+                                          as.numeric(PDGFRA_cb)+
+                                          as.numeric(double_cb)),
+                                          
+                                          
+                                          as.numeric(NELL1_csc), 
+                                          as.numeric(PDGFRA_csc),
+                                          as.numeric(double_csc),
+                                          100 - (as.numeric(NELL1_csc)+ 
+                                          as.numeric(PDGFRA_csc)+
+                                          as.numeric(double_csc))))
+
+
+
+
+ggplot(df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+
+
+subs_data <- subset(df_snrna_seq, df_snrna_seq$gene_expr != "Other OPCs")
+
+ggplot(subs_data, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+
+ggplot(subs_data, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[24:50])
+```
+
+
+```{r}
+
+nell1_data <- subs_data
+
+nell1_data$coexpr <- "NELL1 PDGFRA"
+
+nell1_data$marker <- ifelse(nell1_data$gene_expr == "NELL1+", "Marker1+",
+                            ifelse(nell1_data$gene_expr == "PDGFRA+", "PDGFRA+",
+                                   "Double+"))
+
+```
+
+PAX3 OPCs
+
+```{r}
+PAX3 <- 'PAX3' 
+PDGFRA <- 'PDGFRA' 
+PAX3.cutoff <- 1 
+PDGFRA.cutoff <- 1 
+
+#BA4
+PAX3_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = PAX3) > PAX3.cutoff & 
+                                      FetchData(ba4_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(ba4_opcs, vars = PAX3) < PAX3.cutoff))
+PAX3_PDGFRA_olig2_cells_ba4 <- length(which(FetchData(ba4_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(ba4_opcs, vars = PAX3) > PAX3.cutoff))
+all_cells_incluster_ba4 <- table(ba4_opcs@active.ident)
+PAX3_ba4 <-PAX3_cells_ba4/all_cells_incluster_ba4 * 100 
+# Percentage of cells in dataset that express PAX3
+
+PDGFRA_ba4 <- PDGFRA_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that express PDGFRA
+double_ba4 <- PAX3_PDGFRA_olig2_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that co-express PAX3 + PDGFRA
+
+#CB
+PAX3_cells_cb <- length(which(FetchData(cb_opcs, vars = PAX3) > PAX3.cutoff & 
+                                      FetchData(cb_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_cb <- length(which(FetchData(cb_opcs, vars = PDGFRA) > PDGFRA.cutoff& 
+                                      FetchData(cb_opcs, vars = PAX3) < PAX3.cutoff))
+PAX3_PDGFRA_olig2_cells_cb <- length(which(FetchData(cb_opcs, vars = PDGFRA) > 
+                                         PDGFRA.cutoff & FetchData(cb_opcs, vars = PAX3) >
+                                         PAX3.cutoff))
+all_cells_incluster_cb <- table(cb_opcs@active.ident)
+PAX3_cb <- PAX3_cells_cb/all_cells_incluster_cb * 100 # Percentage of cells in dataset that express PAX3
+PDGFRA_cb <- PDGFRA_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that express PDGFRA
+double_cb <- PAX3_PDGFRA_olig2_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that co-express PAX3 + PDGFRA
+
+#CSC
+PAX3_cells_csc <- length(which(FetchData(csc_opcs, vars = PAX3) > PAX3.cutoff& 
+                                      FetchData(csc_opcs, vars = PDGFRA) < PDGFRA.cutoff))
+PDGFRA_cells_csc <- length(which(FetchData(csc_opcs, vars = PDGFRA) > PDGFRA.cutoff & 
+                                      FetchData(csc_opcs, vars = PAX3) < PAX3.cutoff))
+PAX3_PDGFRA_olig2_cells_csc <- length(which(FetchData(csc_opcs, vars = PDGFRA) > 
+                                          PDGFRA.cutoff & FetchData(csc_opcs, vars = PAX3) >
+                                          PAX3.cutoff))
+all_cells_incluster_csc <- table(csc_opcs@active.ident)
+PAX3_csc <- PAX3_cells_csc/all_cells_incluster_csc * 100 
+# Percentage of cells in dataset that express PAX3
+PDGFRA_csc <- PDGFRA_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that express PDGFRA
+double_csc <- PAX3_PDGFRA_olig2_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that co-express PAX3 + PDGFRA
+
+df_snrna_seq <- data.frame(Tissue = c(rep("BA4", 4), 
+                                     rep("CB", 4),
+                                     rep("CSC", 4)),
+                           gene_expr = rep(c("PAX3+", 
+                                             "PDGFRA+",
+                                             "PAX3+PDGFRA+",
+                                             "Other OPCs"), 3),
+                           percentage = c(as.numeric(PAX3_ba4), 
+                                          as.numeric(PDGFRA_ba4),
+                                          as.numeric(double_ba4),
+                                          100 - (as.numeric(PAX3_ba4)+ 
+                                          as.numeric(PDGFRA_ba4)+
+                                          as.numeric(double_ba4)),
+                                          
+                                          as.numeric(PAX3_cb), 
+                                          as.numeric(PDGFRA_cb),
+                                          as.numeric(double_cb),
+                                          100 - (as.numeric(PAX3_cb)+ 
+                                          as.numeric(PDGFRA_cb)+
+                                          as.numeric(double_cb)),
+                                          
+                                          
+                                          as.numeric(PAX3_csc), 
+                                          as.numeric(PDGFRA_csc),
+                                          as.numeric(double_csc),
+                                          100 - (as.numeric(PAX3_csc)+ 
+                                          as.numeric(PDGFRA_csc)+
+                                          as.numeric(double_csc))))
+
+
+
+
+ggplot(df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+
+
+subs_data <- subset(df_snrna_seq, df_snrna_seq$gene_expr != "Other OPCs")
+
+ggplot(subs_data, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+
+ggplot(subs_data, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[24:50])
+```
+
+
+```{r}
+
+PAX3_data <- subs_data
+
+PAX3_data$coexpr <- "PAX3 PDGFRA"
+
+PAX3_data$marker <- ifelse(PAX3_data$gene_expr == "PAX3+", "Marker1+",
+                            ifelse(PAX3_data$gene_expr == "PDGFRA+", "PDGFRA+",
+                                   "Double+"))
+
+comb_data <- rbind(nell1_data, PAX3_data)
+
+
+subs_dat_opc <- subset(comb_data, comb_data$marker != "Marker1+")
+```
+
+
+```{r}
+ggplot(subs_dat_opc, aes(x = coexpr, y=percentage, fill = marker))+
+  geom_bar(stat="identity", position = "fill")+
+  scale_fill_manual(values= mycoloursP[27:50]) + 
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = -90))
+
+```
+
+```{r}
+ggplot(subs_data, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[24:50])
+```
+
+OPC validation data
+
+Taken from environment (68_Validation_Nell1_PDGFRA.Rmd and
+58_Validation_PDGFRA_PAX3)
+```{r}
+n_dat <- data.frame(donor_id = nell1_subs_long$donor_id, 
+                    tissue = nell1_subs_long$tissue,
+                    sample_id = nell1_subs_long$sample_id,
+                    keycol = nell1_subs_long$keycol,
+                    valuecol= nell1_subs_long$valuecol,
+                    staining = nell1_subs_long$staining)
+
+n_dat$marker <- ifelse(n_dat$keycol == "PDGFRA_NELL1",
+                       "Double+", "PDGFRA+")
+
+p_dat <- data.frame(donor_id = pax3_subs_long$donor_id, 
+                    tissue = pax3_subs_long$tissue,
+                    sample_id = pax3_subs_long$sample_id,
+                    keycol = pax3_subs_long$keycol,
+                    valuecol= pax3_subs_long$valuecol,
+                    staining = pax3_subs_long$staining)
+
+p_dat$marker <- ifelse(p_dat$keycol == "double_pos",
+                       "Double+", "PDGFRA+")
+
+
+nell_pax <- rbind(n_dat, p_dat)
+
+ggplot(nell_pax, aes(x = staining , 
+                          y = valuecol, 
+                          fill = marker)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[16:30])+
+  theme_minimal()+ 
+  theme(axis.text.x = element_text(angle = -90))
+
+```
+
+```{r}
+
+sessionInfo()
+```

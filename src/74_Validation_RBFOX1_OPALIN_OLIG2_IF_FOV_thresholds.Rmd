@@ -1,0 +1,546 @@
+---
+title: "Validation_rbfox1_opalin_olig2_IF"
+author: "Luise A. Seeker"
+date: "09/08/2022"
+output: html_document
+---
+RBFOX1, OPALIN and OLIG2 co-labelling in 3 BA4 and 3 CSC samples to validate 
+clusters using immuno-fluorescence.
+
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+library(Seurat)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+
+
+```{r}
+rbfox1_opalin_olig2 <- read.csv(here("data", 
+                   "validation_data", 
+                   "OPALIN_RBFOX1_OLIG2_quant.csv"))
+
+```
+
+
+```{r}
+names(rbfox1_opalin_olig2)
+
+rbfox1_opalin_olig2$tissue <- as.factor(rbfox1_opalin_olig2$Tissue)
+
+
+rbfox1_opalin_olig2$sample_id <- factor(rbfox1_opalin_olig2$sample_id,
+                                     levels = c("SD012_15_BA4",
+                                                "SD021_17_BA4",
+                                                "SD042_18_BA4",
+                                                "SD011_18_CSC",
+                                                "SD015_12_CSC",
+                                                "SD042_18_CSC"))
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_Detections",
+                "Num_OLIG2",
+                "Num_OPALIN", 
+                "Num_RBFOX1",
+                "Num_OPALIN_OLIG2",
+                "Num_OLIG2_RBFOX1",
+                "Num_OPALIN_RBFOX1",
+                "Num.OPALIN..OLIG2..RBFOX1")
+
+long_data <- gather(rbfox1_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+Remove cells that are negative for all tested markers:
+
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_OPALIN", 
+                "Num_RBFOX1",
+                "Num_OPALIN_OLIG2",
+                "Num_OLIG2_RBFOX1",
+                "Num_OPALIN_RBFOX1",
+                "Num.OPALIN..OLIG2..RBFOX1")
+
+long_data <- gather(rbfox1_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+
+Exclude cells that are not positive for OLIG2
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_OPALIN_OLIG2",
+                "Num_OLIG2_RBFOX1",
+                "Num.OPALIN..OLIG2..RBFOX1")
+
+long_data <- gather(rbfox1_opalin_olig2, keycol, valuecol, gathercols)
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+```{r}
+rbfox1_opalin_olig2$perc_opalin_OLIG2 <- (rbfox1_opalin_olig2$Num_OPALIN_OLIG2/
+                                            (rbfox1_opalin_olig2$Num_OLIG2 +
+                                               rbfox1_opalin_olig2$Num_OPALIN_OLIG2+
+                                               rbfox1_opalin_olig2$Num_OLIG2_RBFOX1+
+                                               rbfox1_opalin_olig2$Num.OPALIN..OLIG2..RBFOX1))*100
+
+rbfox1_opalin_olig2$perc_rbfox1_olig2 <- (rbfox1_opalin_olig2$Num_OLIG2_RBFOX1/
+                                            (rbfox1_opalin_olig2$Num_OLIG2 +
+                                               rbfox1_opalin_olig2$Num_OLIG2_RBFOX1+
+                                               rbfox1_opalin_olig2$Num_OPALIN_OLIG2+
+                                               rbfox1_opalin_olig2$Num.OPALIN..OLIG2..RBFOX1))*100
+
+rbfox1_opalin_olig2$perc_double_pos_olig <- (rbfox1_opalin_olig2$Num.OPALIN..OLIG2..RBFOX1/
+                                            (rbfox1_opalin_olig2$Num_OLIG2 +
+                                               rbfox1_opalin_olig2$Num_OLIG2_RBFOX1+
+                                               rbfox1_opalin_olig2$Num_OPALIN_OLIG2+
+                                               rbfox1_opalin_olig2$Num.OPALIN..OLIG2..RBFOX1))*100
+
+rbfox1_opalin_olig2$perc_olig2 <- (rbfox1_opalin_olig2$Num_OLIG2/
+                                            (rbfox1_opalin_olig2$Num_OLIG2 +
+                                               rbfox1_opalin_olig2$Num_OLIG2_RBFOX1+
+                                               rbfox1_opalin_olig2$Num_OPALIN_OLIG2+
+                                               rbfox1_opalin_olig2$Num.OPALIN..OLIG2..RBFOX1))*100
+
+
+
+
+keycol <- "sample_id"
+valuecol <- "percentage"
+gathercols <- c("perc_opalin_OLIG2",
+                "perc_rbfox1_olig2", 
+                "perc_double_pos_olig",
+                "perc_olig2")
+
+df_protein <- gather(rbfox1_opalin_olig2, keycol, valuecol, gathercols)
+
+df_protein$gene_expr <- ifelse(df_protein$keycol == "perc_rbfox1_olig2",
+                               "RBFOX1+", ifelse(df_protein$keycol == 
+                                                   "perc_opalin_OLIG2",
+                                                 "OPALIN+", 
+                                                 ifelse(df_protein$keycol ==
+                                                          "perc_olig2", "OLIG2+",
+                                                        "RBFOX1+OPALIN+")))
+
+
+df_protein$valuecol <- as.numeric(df_protein$valuecol)
+
+
+# This one is over 100% because it is the added pecentage across all FOVs and 
+# samples within a tissue
+
+
+ggplot(df_protein, aes(x = Tissue, y = valuecol, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])+
+  ylab("Percentage")+
+  theme(legend.title= element_blank()) 
+
+
+
+ggplot(df_protein, aes(x = Tissue, y=valuecol, fill = gene_expr))+
+  geom_bar(position="fill", 
+           stat="identity")+scale_fill_manual(values= mycoloursP[25:50])+
+  ylab("Percentage")+
+  theme(legend.title= element_blank()) 
+
+```
+
+
+```{r}
+ggplot(rbfox1_opalin_olig2, aes(x = tissue, y = perc_opalin_OLIG2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("OPALIN+OLIG2+HOECHST+ (%)") + xlab("Tissue")
+
+```
+
+
+```{r}
+ggplot(rbfox1_opalin_olig2, aes(x = tissue, y = perc_rbfox1_olig2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("RBFOX1+OLIG2+HOECHST+ (%)") + xlab("Tissue")
+
+```
+
+
+```{r}
+ggplot(rbfox1_opalin_olig2, aes(x = tissue, y = perc_double_pos_olig)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(11) + ylab("RBFOX1+OPALIN+OLIG2+HOECHST+ (%)") + xlab("Tissue")
+
+```
+
+
+```{r}
+
+lm_prot_double <- lm(rbfox1_opalin_olig2$perc_double_pos_olig~ rbfox1_opalin_olig2$tissue)
+summary(lm_prot_double)
+anova(lm_prot_double)
+```
+
+```{r}
+
+lm_prot_rbfox1 <- lm(rbfox1_opalin_olig2$perc_rbfox1_olig2~ rbfox1_opalin_olig2$tissue)
+summary(lm_prot_rbfox1)
+anova(lm_prot_rbfox1)
+```
+
+```{r}
+
+lm_prot_opalin <- lm(rbfox1_opalin_olig2$perc_opalin_OLIG2~ rbfox1_opalin_olig2$tissue)
+summary(lm_prot_opalin)
+anova(lm_prot_opalin)
+```
+
+
+```{r}
+
+ti_csc <- subset(rbfox1_opalin_olig2, rbfox1_opalin_olig2$tissue == "CSC")
+ti_ba4 <- subset(rbfox1_opalin_olig2, rbfox1_opalin_olig2$tissue == "BA4")
+
+t.test(ti_csc$perc_double_pos_olig, ti_ba4$perc_double_pos_olig)
+t.test(ti_csc$perc_opalin_OLIG2, ti_ba4$perc_opalin_OLIG2)
+t.test(ti_csc$perc_rbfox1_olig2, ti_ba4$perc_rbfox1_olig2)
+```
+
+```{r}
+
+ti_csc <- subset(rbfox1_opalin_olig2, rbfox1_opalin_olig2$tissue == "CSC")
+ti_ba4 <- subset(rbfox1_opalin_olig2, rbfox1_opalin_olig2$tissue == "BA4")
+
+t.test(ti_csc$perc_double_pos_olig, ti_ba4$perc_double_pos_olig)
+t.test(ti_csc$perc_opalin_OLIG2, ti_ba4$perc_opalin_OLIG2)
+t.test(ti_csc$perc_rbfox1_olig2, ti_ba4$perc_rbfox1_olig2)
+```
+
+
+
+```{r}
+kruskal.test(perc_double_pos_olig ~ tissue, data = rbfox1_opalin_olig2)
+kruskal.test(perc_opalin_OLIG2 ~ tissue, data = rbfox1_opalin_olig2)
+kruskal.test(perc_rbfox1_olig2 ~ tissue, data = rbfox1_opalin_olig2)
+
+```
+
+```{r}
+nad_ol <-  readRDS(here("data", 
+                           "single_nuc_data", 
+                           "oligodendroglia",
+                           "srt_oligos_and_opcs_LS.RDS"))
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+
+Idents(nad_ol) <- "Tissue"
+
+csc_srt <- subset(nad_ol, idents = "CSC")
+cb_srt <- subset(nad_ol, idents = "CB")
+ba4_srt <- subset(nad_ol, idents = "BA4")
+
+cd_genes <- c("RBFOX1")
+
+
+a_csc <- DotPlot(object = csc_srt, features = cd_genes)
+a_csc$data
+mean(a_csc$data$pct.exp)
+
+
+a_cb <- DotPlot(object = cb_srt, features = cd_genes)
+a_cb$data
+mean(a_cb$data$pct.exp)
+
+a_ba4 <- DotPlot(object = ba4_srt, features = cd_genes)
+a_ba4$data
+mean(a_ba4$data$pct.exp)
+
+
+df <- data.frame(modality = rep(c("RBFOX1_neg", "RBFOX1_pos"),3), 
+                 tissue = c("BA4", "BA4", "CB", "CB", "CSC", "CSC"),
+                 percentage = c(100- mean(a_ba4$data$pct.exp),
+                                mean(a_ba4$data$pct.exp), 
+                                100- mean(a_cb$data$pct.exp),
+                                mean(a_cb$data$pct.exp), 
+                                100- mean(a_csc$data$pct.exp),
+                                mean(a_csc$data$pct.exp)))
+
+
+
+ggplot(df, aes(x = tissue, y=percentage, fill = modality))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+```
+OPALIN expression in snRNAseq
+
+```{r}
+cd_genes <- c("OPALIN")
+
+
+a_csc <- DotPlot(object = csc_srt, features = cd_genes)
+a_csc$data
+mean(a_csc$data$pct.exp)
+
+
+a_cb <- DotPlot(object = cb_srt, features = cd_genes)
+a_cb$data
+mean(a_cb$data$pct.exp)
+
+a_ba4 <- DotPlot(object = ba4_srt, features = cd_genes)
+a_ba4$data
+mean(a_ba4$data$pct.exp)
+
+
+df <- data.frame(modality = rep(c("OPALIN_neg", "OPALIN_pos"),3), 
+                 tissue = c("BA4", "BA4", "CB", "CB", "CSC", "CSC"),
+                 percentage = c(100- mean(a_ba4$data$pct.exp),
+                                mean(a_ba4$data$pct.exp), 
+                                100- mean(a_cb$data$pct.exp),
+                                mean(a_cb$data$pct.exp), 
+                                100- mean(a_csc$data$pct.exp),
+                                mean(a_csc$data$pct.exp)))
+
+
+
+ggplot(df, aes(x = tissue, y=percentage, fill = modality))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+OPALIN and RBFOX1 co-expression in snRNAseq
+
+```{r}
+Idents(nad_ol) <- "ol_clusters_named"
+oligos <- subset(nad_ol, idents = c("Oligo_A",
+                                    "Oligo_B",
+                                    "Oligo_C",
+                                    "Oligo_D",
+                                    "Oligo_E",
+                                    "Oligo_F"))
+Idents(oligos) <- "Tissue"
+ba4_ol <-subset(oligos, idents = "BA4")
+cb_ol <-subset(oligos, idents = "CB")
+csc_ol <-subset(oligos, idents = "CSC")
+
+
+rbfox1 <- 'RBFOX1' 
+opalin <- 'OPALIN' 
+rbfox1.cutoff <- 1 
+opalin.cutoff <- 1 
+
+#BA4
+rbfox1_cells_ba4 <- length(which(FetchData(ba4_ol, vars = rbfox1) > rbfox1.cutoff & 
+                                      FetchData(ba4_ol, vars = opalin) < opalin.cutoff))
+opalin_cells_ba4 <- length(which(FetchData(ba4_ol, vars = opalin) > opalin.cutoff& 
+                                      FetchData(ba4_ol, vars = rbfox1) < rbfox1.cutoff))
+rbfox1_opalin_cells_ba4 <- length(which(FetchData(ba4_ol, vars = opalin) > opalin.cutoff & 
+                                      FetchData(ba4_ol, vars = rbfox1) > rbfox1.cutoff))
+all_cells_incluster_ba4 <- table(ba4_ol@active.ident)
+rbfox1_ba4 <-rbfox1_cells_ba4/all_cells_incluster_ba4 * 100 
+# Percentage of cells in dataset that express rbfox1
+
+opalin_ba4 <- opalin_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that express opalin
+double_ba4 <- rbfox1_opalin_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that co-express rbfox1 + opalin
+
+#CB
+rbfox1_cells_cb <- length(which(FetchData(cb_ol, vars = rbfox1) > rbfox1.cutoff& 
+                                      FetchData(cb_ol, vars = opalin) < opalin.cutoff))
+opalin_cells_cb <- length(which(FetchData(cb_ol, vars = opalin) > opalin.cutoff& 
+                                      FetchData(cb_ol, vars = rbfox1) < rbfox1.cutoff))
+rbfox1_opalin_cells_cb <- length(which(FetchData(cb_ol, vars = opalin) > 
+                                         opalin.cutoff & FetchData(cb_ol, vars = rbfox1) >
+                                         rbfox1.cutoff))
+all_cells_incluster_cb <- table(cb_ol@active.ident)
+rbfox1_cb <- rbfox1_cells_cb/all_cells_incluster_cb * 100 # Percentage of cells in dataset that express rbfox1
+opalin_cb <- opalin_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that express opalin
+double_cb <- rbfox1_opalin_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that co-express rbfox1 + opalin
+
+#CSC
+rbfox1_cells_csc <- length(which(FetchData(csc_ol, vars = rbfox1) > rbfox1.cutoff& 
+                                      FetchData(csc_ol, vars = opalin) < opalin.cutoff))
+opalin_cells_csc <- length(which(FetchData(csc_ol, vars = opalin) > opalin.cutoff& 
+                                      FetchData(csc_ol, vars = rbfox1) < rbfox1.cutoff))
+rbfox1_opalin_cells_csc <- length(which(FetchData(csc_ol, vars = opalin) > 
+                                          opalin.cutoff & FetchData(csc_ol, vars = rbfox1) >
+                                          rbfox1.cutoff))
+all_cells_incluster_csc <- table(csc_ol@active.ident)
+rbfox1_csc <- rbfox1_cells_csc/all_cells_incluster_csc * 100 
+# Percentage of cells in dataset that express rbfox1
+opalin_csc <- opalin_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that express opalin
+double_csc <- rbfox1_opalin_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that co-express rbfox1 + opalin
+
+df_snrna_seq <- data.frame(Tissue = c(rep("BA4", 4), 
+                                     rep("CB", 4),
+                                     rep("CSC", 4)),
+                           gene_expr = rep(c("RBFOX1+", 
+                                             "OPALIN+",
+                                             "RBFOX1+OPALIN+",
+                                             "Other oligodendrocytes"), 3),
+                           percentage = c(as.numeric(rbfox1_ba4), 
+                                          as.numeric(opalin_ba4),
+                                          as.numeric(double_ba4),
+                                          100 - (as.numeric(rbfox1_ba4)+ 
+                                          as.numeric(opalin_ba4)+
+                                          as.numeric(double_ba4)),
+                                          
+                                          as.numeric(rbfox1_cb), 
+                                          as.numeric(opalin_cb),
+                                          as.numeric(double_cb),
+                                          100 - (as.numeric(rbfox1_cb)+ 
+                                          as.numeric(opalin_cb)+
+                                          as.numeric(double_cb)),
+                                          
+                                          
+                                          as.numeric(rbfox1_csc), 
+                                          as.numeric(opalin_csc),
+                                          as.numeric(double_csc),
+                                          100 - (as.numeric(rbfox1_csc)+ 
+                                          as.numeric(opalin_csc)+
+                                          as.numeric(double_csc))))
+
+
+ggplot(df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+```
+```{r}
+
+subs_df_snrna_seq <- subset(df_snrna_seq, df_snrna_seq$gene_expr != "Other oligodendrocytes")
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+
+
+Conclusion:
+I stained for RBFOX1, OPALIN and OLIG2 in immuno fluorescence stainings and 
+found a larger proportion of double positive cells than expected from snRNAseq
+data. 
+
+```{r}
+sessionInfo()
+
+```

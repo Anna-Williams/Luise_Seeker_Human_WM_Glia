@@ -1,0 +1,381 @@
+---
+title: "Shiny"
+author: "Luise A. Seeker"
+date: "18/01/2022"
+output: html_document
+---
+
+```{r}
+library(ShinyCell)
+library(Seurat)
+library(here)
+library(ggsci)
+```
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7, "black", "blue")
+```
+
+
+
+# Complete dataset
+
+```{r}
+seu <- readRDS(here(here("data", 
+                         "single_nuc_data", 
+                         "data_for_publication", 
+                         "HCA_complete_dataset.RDS")))
+
+
+
+scConf1 = createConfig(seu, meta.to.include = colnames(seu@meta.data)[1:42])
+
+scConf1 = modMetaName(scConf1, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "CountsPerCluster_res_0_8",
+                                               "IdCountGroup",
+                                               "samplesPerCluster_res_0_8",
+                                               "sample_count_per_cl_group",
+                                               "gender"), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "don_ids_per_clu_0_8",
+                                   "don_ids_per_clu_0_8_gr",
+                                   "sampl_per_clu_0_8",
+                                   "sampl_per_clu_0_8_gr",
+                                   "sex"))
+scConf1 = modDefault(scConf1, default1 = "cell_lineage", default2 = "Tissue")
+                      
+                      
+
+#scConf1 = modColours(scConf1, meta.to.mod = "cluster_id", 
+#                     new.colours= mycoloursP)
+
+makeShinyFiles(seu, scConf1, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc1",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "PLP1", default.gene2 = "SNAP25",
+               default.multigene = c("RBFOX1","SPARC","OPALIN","GFAP","CD74",
+                                     "SNAP25","RELN","CLDN5","PDGFRA"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+
+
+```
+
+# Oligodendroglia
+
+```{r}
+
+seu <-  readRDS(here("data", 
+                        "single_nuc_data", 
+                        "oligodendroglia",
+                        "srt_oligos_and_opcs_LS.RDS"))
+
+scConf2 = createConfig(seu)
+scConf2 = delMeta(scConf2, c("orig.ident", "BBN", "CauseOfDeath_1a",
+                             "CauseOfDeath_1b", "CauseOfDeath_1c",
+                             "CauseOfDeath_1d", "Cryostat_date",
+                             "SlideBox", "Location_Block",
+                             "comments", "RNAconcRIN",
+                             "RINvalueDate", "RINvalueRemeasured",#
+                             "rEeXTRACT", "project_name", "percent.mt",
+                             "low_lib_size", "large_lib_size","low_n_features",
+                             "high_n_features", "high_subsets_mito_percent", 
+                             "discard", "ScaterQC_failed", "seurat_clusters",
+                             "S.Score", "G2M.Score" , "Phase", "old.ident", #
+                             "sample_qc_failed" , "QC_UMI",
+                             "sum",
+                             "detected", "total", "ProcessNumber",
+                             "CountsPerCluster_res_0_8", "IdCountGroup", ##
+                             "samplesPerCluster_res_0_8",
+                             "sample_count_per_cl_group", "nad_ol" , "RINvalue",
+                             "rough_annot"
+                             ))
+scConf2 = modMetaName(scConf2, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "gender",
+                                               "ol_clusters_named"), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "sex",
+                                   "cluster_id"))
+
+scConf2 = modDefault(scConf2, default1 = "cluster_id", default2 = "Tissue")
+
+#scConf2 = modColours(scConf2, meta.to.mod = "library", 
+#                     new.colours= c("black", "blue", "purple"))
+
+makeShinyFiles(seu, scConf2, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc2",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "PLP1", default.gene2 = "PDGFRA",
+               default.multigene = c("RBFOX1","SPARC","OPALIN","FMN1","PDGFRA",
+                                     "PLP1","HNC2","NELL1","PAX3"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+
+```
+
+
+```{r}
+
+seu <- readRDS(here("data",
+                        "single_nuc_data",
+                        "astrocytes",
+                        "HCA_astrocytes.RDS"))
+
+
+scConf3 = createConfig(seu)
+scConf3 = delMeta(scConf3, c("orig.ident", "BBN", "CauseOfDeath_1a",
+                             "CauseOfDeath_1b", "CauseOfDeath_1c",
+                             "CauseOfDeath_1d", "Cryostat_date",
+                             "SlideBox", "Location_Block",
+                             "comments", "RNAconcRIN",
+                             "RINvalueDate", "RINvalueRemeasured",#
+                             "rEeXTRACT", "project_name", "percent.mt",
+                             "low_lib_size", "large_lib_size","low_n_features",
+                             "high_n_features", "high_subsets_mito_percent", 
+                             "discard", "ScaterQC_failed", "seurat_clusters",
+                             "S.Score", "G2M.Score" , "Phase", "old.ident", 
+                             "sample_qc_failed" , "QC_UMI",
+                             "sum",
+                             "detected", "total", "ProcessNumber",
+                             "CountsPerCluster_res_0_8", "IdCountGroup", 
+                             "samplesPerCluster_res_0_8",
+                             "sample_count_per_cl_group", "RINvalue", "clusters_0.5", 
+                             "clusters_0.9" , "clusters_1", "clusters_1.1" ,
+                             "clusters_1.2", "clusters_1.3", "clusters_1.4", 
+                             "astrocytes_clu"
+                             ))
+scConf3 = modMetaName(scConf3, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "gender",
+                                               "rough_annot"), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "sex",
+                                   "cell_type"))
+
+#scConf2 = modColours(scConf2, meta.to.mod = "library", 
+#                     new.colours= c("black", "blue", "purple"))
+
+scConf3 = modDefault(scConf3, default1 = "cluster_id", default2 = "Tissue")
+
+makeShinyFiles(seu, scConf3, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc3",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "GFAP", default.gene2 = "NKAIN2",
+               default.multigene = c("GFAP","ADGRV1","PAX3","PAK3","FAT3",
+                                     "SKAP2","BCAN","GREB1L","CPAMD8"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+
+
+```
+
+```{r}
+
+seu <- readRDS(here("data",
+                        "single_nuc_data",
+                        "microglia",
+                        "HCA_microglia.RDS"))
+
+scConf4 = createConfig(seu)
+scConf4 = delMeta(scConf4, c("orig.ident", "BBN", "CauseOfDeath_1a",
+                             "CauseOfDeath_1b", "CauseOfDeath_1c",
+                             "CauseOfDeath_1d", "Cryostat_date",
+                             "SlideBox", "Location_Block",
+                             "comments", "RNAconcRIN",
+                             "RINvalueDate", "RINvalueRemeasured",#
+                             "rEeXTRACT", "project_name", "percent.mt",
+                             "low_lib_size", "large_lib_size","low_n_features",
+                             "high_n_features", "high_subsets_mito_percent", 
+                             "discard", "ScaterQC_failed", "seurat_clusters",
+                             "S.Score", "G2M.Score" , "Phase", "old.ident", 
+                             "sample_qc_failed" , "QC_UMI",
+                             "sum",
+                             "detected", "total", "ProcessNumber",
+                             "CountsPerCluster_res_0_8", "IdCountGroup", 
+                             "samplesPerCluster_res_0_8",
+                             "sample_count_per_cl_group", "RINvalue", "clusters_0.5", 
+                             "clusters_0.9" , "clusters_1", "clusters_1.1" ,
+                             "clusters_1.2", "clusters_1.3", "clusters_1.4"
+                             ))
+scConf4 = modMetaName(scConf4, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "gender",
+                                               "rough_annot",
+                                               "microglia_clu"), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "sex",
+                                   "cell_type",
+                                   "cluster_id"))
+
+#scConf2 = modColours(scConf2, meta.to.mod = "library", 
+#                     new.colours= c("black", "blue", "purple"))
+
+scConf4 = modDefault(scConf4, default1 = "cluster_id", default2 = "Tissue")
+
+makeShinyFiles(seu, scConf4, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc4",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "CD74", default.gene2 = "IBA1",
+               default.multigene = c("HIF1A","GRID2","HLA-DRA","DDX5","PLP1",
+                                     "NEAT1","CX3CR1","CD74","IBA1"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+
+```
+
+
+```{r}
+
+seu <- readRDS(here("data",
+                        "single_nuc_data",
+                        "vascular_cells",
+                        "HCA_vascular_cells.RDS"))
+
+scConf5 = createConfig(seu)
+scConf5 = delMeta(scConf5, c("orig.ident", "BBN", "CauseOfDeath_1a",
+                             "CauseOfDeath_1b", "CauseOfDeath_1c",
+                             "CauseOfDeath_1d", "Cryostat_date",
+                             "SlideBox", "Location_Block",
+                             "comments", "RNAconcRIN",
+                             "RINvalueDate", "RINvalueRemeasured",#
+                             "rEeXTRACT", "project_name", "percent.mt",
+                             "low_lib_size", "large_lib_size","low_n_features",
+                             "high_n_features", "high_subsets_mito_percent", 
+                             "discard", "ScaterQC_failed", "seurat_clusters",
+                             "S.Score", "G2M.Score" , "Phase", "old.ident", 
+                             "sample_qc_failed" , "QC_UMI",
+                             "sum",
+                             "detected", "total", "ProcessNumber",
+                             "CountsPerCluster_res_0_8", "IdCountGroup", 
+                             "samplesPerCluster_res_0_8",
+                             "sample_count_per_cl_group", "RINvalue", "clusters_0.5", 
+                             "clusters_0.9" , "clusters_1", "clusters_1.1" ,
+                             "clusters_1.2", "clusters_1.3", "clusters_1.4"
+                             ))
+scConf5 = modMetaName(scConf5, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "gender",
+                                               "rough_annot",
+                                               "vascular_cells_clu"), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "sex",
+                                   "cell_type",
+                                   "cluster_id"))
+
+#scConf2 = modColours(scConf2, meta.to.mod = "library", 
+#                     new.colours= c("black", "blue", "purple"))
+
+scConf5 = modDefault(scConf5, default1 = "cluster_id", default2 = "Tissue")
+
+makeShinyFiles(seu, scConf5, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc5",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "CLDN5", default.gene2 = "NOTCH3",
+               default.multigene = c("CLDN5","NOTCH3","PLP1","ACTA4","HEY2",
+                                     "VGFC","MFSD2A","PDGFRB","VCAM1"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+
+
+
+```
+
+```{r}
+seu <- readRDS(here("data",
+                        "single_nuc_data",
+                        "neurons",
+                        "HCA_neurons.RDS"))
+
+scConf6 = createConfig(seu)
+scConf6 = delMeta(scConf6, c("orig.ident", "BBN", "CauseOfDeath_1a",
+                             "CauseOfDeath_1b", "CauseOfDeath_1c",
+                             "CauseOfDeath_1d", "Cryostat_date",
+                             "SlideBox", "Location_Block",
+                             "comments", "RNAconcRIN",
+                             "RINvalueDate", "RINvalueRemeasured",#
+                             "rEeXTRACT", "project_name", "percent.mt",
+                             "low_lib_size", "large_lib_size","low_n_features",
+                             "high_n_features", "high_subsets_mito_percent", 
+                             "discard", "ScaterQC_failed", "seurat_clusters",
+                             "S.Score", "G2M.Score" , "Phase", "old.ident", 
+                             "sample_qc_failed" , "QC_UMI",
+                             "sum",
+                             "detected", "total", "ProcessNumber",
+                             "CountsPerCluster_res_0_8", "IdCountGroup", 
+                             "samplesPerCluster_res_0_8",
+                             "sample_count_per_cl_group", "RINvalue", "clusters_0.5", 
+                             "clusters_0.9" , "clusters_1", "clusters_1.1" ,
+                             "clusters_1.2", "clusters_1.3", "clusters_1.4"
+                             ))
+scConf6 = modMetaName(scConf6, meta.to.mod = c("X10XBatch", 
+                                               "total_percent_mito",
+                                               "gender",
+                                               "rough_annot",
+                                               "neurons_clu" ), 
+                      new.name = c("10X_batch",
+                                   "percent_mito",
+                                   "sex",
+                                   "cell_type",
+                                   "cluster_id"))
+
+#scConf2 = modColours(scConf2, meta.to.mod = "library", 
+#                     new.colours= c("black", "blue", "purple"))
+
+scConf6 = modDefault(scConf6, default1 = "cluster_id", default2 = "Tissue")
+
+makeShinyFiles(seu, scConf6, gex.assay = "RNA", gex.slot = "data",
+               gene.mapping = TRUE, shiny.prefix = "sc6",
+               shiny.dir = "shiny_app_multi/",
+               default.gene1 = "SATB2", default.gene2 = "GAD1",
+               default.multigene = c("SNAP25","SATB2","GAD1","RELN","CALB1",
+                                     "CALB2","PVALB","NPY","NOS1"),
+               default.dimred = c("UMAP_1", "UMAP_2"))
+
+```
+
+
+
+
+
+```{r}
+
+citation = list(
+  author  = "Seeker L. A. et al.",
+  title   = "",
+  journal = "TBC",
+  volume  = "TBC",
+  page    = "TBC",
+  year    = "TBC", 
+  doi     = "TBC",
+  link    = "TBC")
+makeShinyCodesMulti(
+  shiny.title = "Human white matter cell heterogeneity with region, age and sex", 
+  shiny.footnotes = citation,
+  shiny.prefix = c("sc1", "sc2", "sc3", "sc4", "sc5", "sc6"),
+  shiny.headers = c("Complete dataset", "Oligodendroglia", "Astrocytes", 
+                    "Microglia", "Vascular cells", "Neurons"), 
+  shiny.dir = "shiny_app_multi/") 
+
+```
+
+
+```{r}
+
+sessionInfo()
+```

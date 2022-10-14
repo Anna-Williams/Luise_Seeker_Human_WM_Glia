@@ -1,0 +1,2541 @@
+---
+title: "Microglia & Macrophages"
+author: "Luise A. Seeker"
+date: "03/09/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+library(future)
+library(scclusteval)
+library(clustree)
+library(tidyr)
+library(gridExtra)
+library(EnhancedVolcano)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+```{r}
+e <- 40000 * 1024^2
+options(future.globals.maxSize = e)
+
+```
+
+```{r}
+seur_comb <- readRDS(here("data", 
+                          "single_nuc_data", 
+                          "all_cell_types",
+                          "srt_anno_01.RDS"))
+
+
+
+```
+
+
+```{r}
+DimPlot(seur_comb, cols = mycoloursP, label = TRUE) + NoLegend()
+
+```
+
+
+
+```{r}
+micro_srt <- subset(seur_comb, idents = c("Microglia-Macrophages_1",
+                                          "Microglia-Macrophages_2"))
+```
+
+
+```{r}
+
+micro_srt <- FindVariableFeatures(micro_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes <- rownames(micro_srt)
+micro_srt <- ScaleData(micro_srt, features= all_genes)
+
+micro_srt <- RunPCA(micro_srt, features = VariableFeatures(object = micro_srt))
+ElbowPlot(micro_srt)
+
+
+
+
+```
+
+
+```{r}
+
+micro_srt <- FindNeighbors(micro_srt, dims = 1:10)
+
+# test different resolutions for clustering
+micro_srt <- FindClusters(micro_srt, resolution = 0.7)
+
+
+# non-linear reduction
+micro_srt <- RunUMAP(micro_srt, dims = 1:10)
+
+DimPlot(micro_srt, cols = mycoloursP[18:40], label = TRUE) + NoLegend()
+```
+
+
+
+
+
+```{r}
+micro_srt <- FindClusters(micro_srt, resolution = c(0.01, 0.04, 0.05, 
+                                              seq(from = 0.1, to = 1.5, by = 0.1)))
+
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern, 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- gtools::mixedsort(res_names) 
+  plot_l <-list()
+  for(i in 1: length(res_names)){
+  pdf(paste0(save_dir, "/",
+               res_names[i], "_umap.pdf"), width=width, height=height)
+  dim_plot <- DimPlot(seur_obj, 
+                          reduction = "umap", 
+                          cols= plot_cols,
+                          group.by = res_names[i],
+                          label = clust_lab,
+                          label.size = label_size) + NoLegend()
+  print(dim_plot)
+  dev.off()
+  print(dim_plot)
+  }
+}
+
+
+save_dir_micro <- here("outs",
+                       "microglia_macrophages",
+                       "cluster_resolutions")
+dir.create(save_dir_micro, recursive = TRUE)
+
+plot_list_func(seur_obj = micro_srt, 
+               col_pattern = "RNA_snn_res.",
+               plot_cols = mycoloursP[18:40],
+               save_dir = save_dir_micro)
+
+```
+
+```{r}
+DimPlot(micro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.4",
+        split.by = "Tissue") + NoLegend()
+
+```
+
+```{r}
+DimPlot(micro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.4",
+        split.by = "AgeGroup") + NoLegend()
+
+```
+
+```{r}
+DimPlot(micro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.4",
+        split.by = "gender") + NoLegend()
+
+```
+
+
+```{r}
+
+pdf(here(save_dir_micro, "microglia_clustree.pdf"), 
+    paper="a4", width=8, height=11.5)
+clustree(
+  micro_srt,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+dev.off()
+
+```
+
+# Deciding for the a clustering resolution
+
+I looked for variable genes between all markers and pairwise at reslution 
+0.4, filtered the markers and plotted them in a heat map. I did have a look at
+the cluster QC below at that resolution as well which looked fine. I believe 
+that clusters 0,1 and 2 are not sufficiently different to remain separated. 
+Therefore I will merge them below and then repeat looking for cluster markers
+overall and pairwise and present the cluster QC for the new clustering.
+
+```{r}
+Idents(micro_srt) <- "RNA_snn_res.0.4"
+  micro_srt <-  RenameIdents(
+    micro_srt,
+    "0" = "MI_1",
+    "1" = "MI_1",
+    "2" = "MI_1",
+    "3" = "MI_2",
+    "4" = "MI_3",
+    "5" = "MI_4",
+    "6" = "BAM",
+    "7" = "MI_5"
+  )
+# Plot result
+DimPlot(micro_srt,label = TRUE, repel=TRUE)
+
+DimPlot(micro_srt,label = TRUE, repel=TRUE, cols = mycoloursP[18:40],
+                  label.size = 4.5)
+
+# Save result
+micro_srt$microglia_clu <- Idents(micro_srt)
+
+```
+
+
+Find markers for all interesting resolutions
+```{r}
+int_res_all_mark <- function(seur_obj, 
+                             int_cols,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.6,
+                             avg_log = 1.2,
+                             save_dir = getwd(),
+                             test_use = "MAST"
+                             ){
+  for(i in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[i]
+    all_mark <- FindAllMarkers(seur_obj, 
+                               only.pos = only_pos, 
+                               min.pct = min_pct, 
+                               logfc.threshold = logfc_threshold,
+                               test.use = test_use)
+    fil_mark<- subset(all_mark, 
+                      all_mark$pct.1 > fil_pct_1 & 
+                        all_mark$pct.2 < fil_pct_2 )
+    
+    write.csv(all_mark, paste(save_dir, "/all_mark", int_cols[i], ".csv", sep = "" ))
+    write.csv(fil_mark, paste(save_dir, "/fil_mark", int_cols[i], ".csv", sep = "" ))
+    
+  }
+}
+
+```
+
+
+```{r}
+
+save_dir_micro <- here("outs",
+                       "microglia_macrophages",
+                       "cluster_marker_lists")
+```
+
+
+```{r, eval = FALSE}
+
+
+dir.create(save_dir_micro, recursive = TRUE)
+
+
+
+int_res_all_mark(micro_srt, 
+                 int_cols = c("RNA_snn_res.0.05",
+                              "RNA_snn_res.0.1",
+                              "RNA_snn_res.0.2",
+                              "RNA_snn_res.0.3",
+                              "RNA_snn_res.0.4",
+                              "RNA_snn_res.0.7",
+                              "microglia_clu"),
+                 save_dir = save_dir_micro)
+
+```
+
+# Pairwise cluster comparison for markers
+
+```{r}
+
+
+Idents(micro_srt) <- "microglia_clu"
+
+clust_id_list_2 <- list(list("Microglia_1", "Microglia_2"), list("Microglia_2", "Microglia_1"), 
+                      list("Microglia_1", "Microglia_3"), list("Microglia_3", "Microglia_1"),
+                      list("Microglia_1", "Microglia_4"), list("Microglia_4", "Microglia_1"), 
+                      list("Microglia_1", "BAM"), list("BAM", "Microglia_1"),
+                      list("Microglia_4", "BAM"), list("BAM", "Microglia_4"), 
+                      list("Microglia_3", "Microglia_5"), list("Microglia_5", "Microglia_3"),
+                      list("Microglia_2", "Microglia_3"), list("Microglia_3", "Microglia_2"))
+
+
+
+pairwise_mark <- function(seur_obj, 
+                             int_cols,
+                             clust_id_list,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.1,
+                             save_dir = getwd(),
+                             test_use = "MAST"){
+  for(k in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[k]
+    for(i in 1: length(clust_id_list)){
+      clust_mark <- FindMarkers(seur_obj, 
+                                ident.1 = clust_id_list[[i]][[1]], 
+                                ident.2 = clust_id_list[[i]][[2]],
+                                min.pct = min_pct, 
+                                test.use = test_use)
+      clust_mark$cluster <- clust_id_list[[i]][[1]]
+      clust_mark$comp_to_clust <- clust_id_list[[i]][[2]]
+      write.csv(clust_mark, 
+                paste(save_dir, 
+                      "/", 
+                      int_cols[k],
+                      "_",
+                      clust_id_list[[i]][[1]],
+                      "_",
+                      clust_id_list[[i]][[2]],
+                      ".csv", sep = "" ))
+    }
+  }
+}
+
+
+
+save_dir_micro_pw <- here("outs",
+                       "microglia_macrophages",
+                       "pairwise_cluster_marker_lists")
+
+
+
+```
+
+```{r, eval = FALSE}
+
+dir.create(save_dir_micro_pw, recursive = TRUE)
+
+
+pairwise_mark(micro_srt, 
+              int_cols = "microglia_clu",
+              save_dir = save_dir_micro_pw,
+              clust_id_list = clust_id_list_2)
+
+```
+
+Read in data for plotting differentially expressed genes
+```{r}
+
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv")
+  myfiles = lapply(paste(file_dir, temp, sep = "/"), read.csv)
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                       dat$pct.1 > pct_1 & 
+                       dat$pct.2 < pct_2)
+    if(pairwise == TRUE){
+      
+      top10 <- av_log_fil %>% top_n(10, avg_log2FC)
+      top10$gene <- top10$X
+    }else{
+    av_log_fil$cluster <- as.character(av_log_fil$cluster)
+    top10 <- av_log_fil %>% group_by(cluster) %>% 
+      top_n(10, avg_log2FC)
+    }
+    
+    if(i ==1){
+      fil_genes <- top10
+    }else{
+      fil_genes <- rbind(fil_genes, top10)
+    }
+    
+    fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+    
+  }
+  
+  return(fil_genes)
+}
+
+
+fil_genes <- gen_mark_list(file_dir = save_dir_micro)
+
+fil_genes_pw <- gen_mark_list(file_dir = save_dir_micro_pw,
+                              pairwise = TRUE)
+
+int_genes <- c(fil_genes$gene, fil_genes_pw$gene)
+int_genes <- unique(int_genes)
+
+
+
+
+```
+
+```{r, fig.height = 10, fig.width=6}
+# every cell name
+
+Idents(micro_srt) <- "microglia_clu"
+
+cluster_averages <- AverageExpression(micro_srt, 
+                                      group.by = "microglia_clu",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$cluster <- levels(as.factor(micro_srt@meta.data$microglia_clu))
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F)
+
+hm_av
+```
+
+
+# Plot cluster markers
+```{r, fig.width=8, fig.height=8}
+FeaturePlot(micro_srt, features = c(
+  "DPP10",
+  "NRG3",
+  "RNF219-AS1",
+  "SORBS1",
+  "TRPM3",
+  "CTNND2",
+  "ABLIM1",
+  "CNTN1",
+  "LSAMP",
+  "DCLK2",
+  "PPP2R2B",
+  "TNIK",
+  "NTM",
+  "RORA",
+  "MAGI2"
+),ncol = 4)
+
+```
+
+```{r, fig.height = 6, fig.width - 6}
+FeaturePlot(micro_srt,
+            features =c(
+              "ACSL1",
+              "CXCR4",
+              "FTH1",
+              "GPR183",
+              "CTNNB1"
+            ),
+            ncol = 3)
+
+```
+
+```{r, fig.width = 6, fig.height = 3}
+FeaturePlot(micro_srt,
+            features =c(
+              "GPNMB",
+              "SCD"
+            ),
+            ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 6, fig.height = 6}
+
+FeaturePlot(micro_srt,
+            features =c(
+              "RASGEF1C",
+              "AC008691.1",
+              "TLN2"
+            ),
+            ncol = 2)
+
+
+
+
+```
+
+# Markers provided by Veronique Miron
+To see if they are microglia vs border associated macrophages or monocytes, 
+I would look at:
+P2ry12, P2ry13, Sall1, Hexb, Tmem119 - for microglia
+Pf4, Lyve1, Cd38, Mrc1 - for border associated macrophages
+S100a9, Ccr2 -monocytes
+
+For function, I would look at:
+Itgax, Igf1, Spp1 (thought to be markers of mouse white matter associated microglia, likely phagocytic)
+Cd68, Trem2, Cx3cr1, Tlr4 (phagocytosis)
+
+```{r, fig.width = 6, fig.height = 9}
+FeaturePlot(micro_srt,
+            features =c(
+              "P2RY12",
+              "P2RY13",
+              "SALL1",
+              "HEXB",
+              "TMEM119"
+            ),
+            ncol = 2)
+```
+
+```{r, fig.width = 6, fig.height = 6}
+FeaturePlot(micro_srt,
+            features =c(
+              "PF4",
+              "LYVE1",
+              "CD38",
+              "MRC1"
+            ),
+            ncol = 2)
+```
+
+```{r, eval = FALSE}
+
+FeaturePlot(micro_srt,
+            features =c(
+              "S100A9",
+              "CCR2"
+            ))
+
+# Monocyte genes are not found in this dataset
+```
+
+For function, I would look at:
+Itgax, Igf1, Spp1 (thought to be markers of mouse white matter associated 
+microglia, likely phagocytic)
+Cd68, Trem2, Cx3cr1, Tlr4 (phagocytosis)
+
+```{r, fig.width = 9, fig.height = 9}
+
+FeaturePlot(micro_srt,
+            features =c(
+              "ITGAX",
+              "IGF1",
+              "SPP1",
+              "CD68",
+              "TREM2",
+              "CX3CR1",
+              "TLR4"
+            ),
+            ncol = 3)
+
+#TLR4 is not on our dataset
+```
+
+# Find tissue markers
+```{r}
+Idents(micro_srt) <- "Tissue"
+
+tissue_dir <- here("outs",
+                   "microglia_macrophages",
+                   "tissue_marker_list_mm")
+
+
+```
+
+
+```{r, eval = FALSE}
+
+
+tissue_markers <- FindAllMarkers(micro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+dir.create(tissue_dir)
+write.csv(tissue_markers, here(tissue_dir, 
+                               "mm_tissue_marker.csv"))
+```
+
+
+```{r}
+tissue_markers <- read.csv(here(tissue_dir, 
+                               "mm_tissue_marker.csv"))
+
+tissue_markers
+
+
+
+```
+
+```{r}
+
+sign_tissue <- subset(tissue_markers, tissue_markers$p_val_adj < 0.05)
+top_tissue <- sign_tissue %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+
+
+
+p1 <- DotPlot(micro_srt, features = unique(top_tissue$gene), group.by = "Tissue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p1
+```
+
+
+```{r}
+FeaturePlot(micro_srt, features = "HIF1A", 
+            split.by = "Tissue")
+
+```
+
+
+
+# Find age  markers
+```{r}
+Idents(micro_srt) <- "AgeGroup"
+
+age_dir <- here("outs",
+                   "microglia_macrophages",
+                   "age_marker_list_mm")
+```
+
+
+```{r, eval = FALSE}
+
+age_markers <- FindAllMarkers(micro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+
+
+dir.create(age_dir)
+write.csv(age_markers, here(age_dir, 
+                               "mm_age_marker.csv"))
+
+```
+
+```{r}
+age_markers <- read.csv(here(age_dir, "mm_age_marker.csv"))
+
+age_markers
+
+
+```
+
+```{r}
+sing_age_m <- subset(age_markers, age_markers$p_val_adj < 0.05)
+
+top_age <- sing_age_m %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+p2 <- DotPlot(micro_srt, features = unique(top_age$gene), group.by = "AgeGroup") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p2
+```
+
+
+
+## More in young:
+
+```{r, fig.width = 6, fig.height = 9}
+FeaturePlot(micro_srt, features = c("IPCEF1",
+                                    "RTTN",
+                                    "CYFIP1"
+                                    ), 
+            split.by = "AgeGroup")
+
+```
+
+## More in old:
+
+```{r, fig.width = 6, fig.height = 15}
+FeaturePlot(micro_srt, features = c("HLA-DRB1",
+                                    "GLDN",
+                                    "CSGALNACT1",
+                                    "PADI2",
+                                    "SRGN",
+                                    "P4HA1"), 
+            split.by = "AgeGroup")
+
+```
+
+
+# Find sex markers
+```{r}
+Idents(micro_srt) <- "gender"
+
+sex_dir <- here("outs",
+                   "microglia_macrophages",
+                   "sex_marker_list_mm")
+
+```
+
+
+```{r, eval = FALSE}
+sex_markers <- FindAllMarkers(micro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+sex_markers
+
+dir.create(sex_dir)
+
+write.csv(sex_markers, here(sex_dir,  "mm_sex_marker.csv"))
+
+
+```
+
+```{r}
+
+sex_markers <- read.csv(here(sex_dir,  "mm_sex_marker.csv"))
+sex_markers
+```
+
+```{r}
+sig_sex <- subset(sex_markers, sex_markers$p_val_adj < 0.05)
+
+top_sex <- sig_sex %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+p3 <- DotPlot(micro_srt, features = unique(top_sex$gene), group.by = "gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+ p3
+```
+```{r, fig.width = 8, fig.height = 10}
+grid.arrange( p1, p2, p3, ncol = 1)
+
+```
+
+## More in women
+
+```{r, fig.width = 6, fig.height = 18}
+FeaturePlot(micro_srt, features = c("XIST",
+                                    "IFI44L",
+                                    "HLA-DRB5",
+                                    "RPS4X",
+                                    "APOE"
+                                    ), 
+            split.by = "gender")
+# encoded on X-chromosome
+```
+
+## More in men
+
+```{r, fig.width = 6, fig.height = 24}
+FeaturePlot(micro_srt, features = c("LINC00278",
+                                    "UTY",
+                                    "USP9Y",
+                                    "NLGN4Y",
+                                    "TTTY14",
+                                    "HSPA1A",
+                                    "DUSP1",
+                                    "HSPH1"
+                                    ), 
+            split.by = "gender")
+# first 5 are encoded on Y-chromosome
+```
+
+# Find age*sex markers
+```{r}
+Idents(micro_srt) <- "ageSex"
+
+
+age_sex_dir <- here("outs",
+                   "microglia_macrophages",
+                   "age_sex_marker_list_mm")
+
+```
+
+
+```{r, eval = FALSE}
+age_sex_markers <- FindAllMarkers(micro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+dir.create(age_sex_dir)
+
+write.csv(age_sex_markers, here(age_sex_dir,  "mm_age_sex_marker.csv"))
+
+
+```
+
+```{r}
+
+age_sex_markers <- read.csv(here(age_sex_dir,  "mm_age_sex_marker.csv"))
+age_sex_markers
+```
+
+```{r}
+sig_age_sex <- subset(age_sex_markers, age_sex_markers$p_val_adj < 0.05)
+
+top_age_sex <- sig_age_sex %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+micro_srt$ageSex <- factor(micro_srt$ageSex, levels = c("Old men",
+                                                  "Old women",
+                                                  "Young men",
+                                                  "Young women"))
+
+top_age_sex <- top_age_sex %>% 
+    arrange(factor(top_age_sex$cluster, levels = c("Old men",
+                                                   "Old women",
+                                                   "Young men",
+                                                   "Young women")))
+Idents(micro_srt) <- "ageSex"
+
+p4 <- DotPlot(micro_srt, features = unique(top_age_sex$gene), group.by = "ageSex") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+p4
+```
+
+
+
+# Microglia activation genes
+
+```{r, fig.width = 6, fig.height = 24}
+FeaturePlot(micro_srt, features = c("SPP1",
+                                    "CD74",
+                                    "FTL",
+                                    "APOE",
+                                    "FTH1",
+                                    "CST3",
+                                    "RPL29",
+                                    "APOC1"
+                                    ), 
+            split.by = "AgeGroup")
+
+```
+
+Of the genes above APOE has been shown to be more expressed in female aged mice 
+than in male aged mice (https://pubmed.ncbi.nlm.nih.gov/30082275/) and 
+in females in mouse models of AD 
+(reviewed by https://nnjournal.net/article/view/3357#B113).
+
+https://www.sciencedirect.com/science/article/pii/S2211124720311785 this paper
+claims single nucleus RNA seq data is not as well equipped as single cell 
+RNA seq data to detect genes of microglial activation. They compared human
+single cell and single nucleus data. Their study was based on only a few samples
+and processing two different isolations in paralell may have caused waiting times
+that need to be consiederd. The authors used a reference genome that included 
+introns for the genome alignment of nucleus data which should have allowed
+for the inclusion of unspliced data.
+
+
+# Literature
+
+
+```{r, fig.width = 6, fig.height = 18}
+FeaturePlot(micro_srt, features = c("HLA-A",
+                                    "HLA-B",
+                                    "SHANK3", 
+                                    "FXYD1", 
+                                    "AQP1", 
+                                    "TIMP3",
+                                    #"AKT1S1",
+                                    #"TREM1",
+                                    #"S100A9",
+                                    #"CXCL2",
+                                    "NFKB1"), 
+            split.by = "gender")
+
+
+
+```
+
+
+
+
+```{r}
+
+FeaturePlot(micro_srt, features = c("PTPRC", #CD45
+                                    "CD68",
+                                    "ITGAM" #CD11B
+                                    ), split.by = "Tissue")
+```
+Activation markers
+
+
+```{r, fig.width = 9, fig.height = 51}
+
+FeaturePlot(micro_srt, features = c("FCGR3A", #CD16)
+                                    "FCGR2A", #CD32 
+                                    "CD40",
+                                    "CD86",
+                                    "HLA-DMA",
+                                    "HLA-DMB",
+                                    "HLA-DOA",
+                                    "HLA-DOB",
+                                    "HLA-DPA1",
+                                    "HLA-DPB1",
+                                    "HLA-DQA1",
+                                    #"HLA-DQA2", not expresses
+                                    "HLA-DQB1",
+                                    #"HLA-DQB2", not expresses
+                                    "HLA-DRA",
+                                    "HLA-DRB1",
+                                    #"HLA-DRB3", not expresses
+                                    #"HLA-DRB4", not expresses
+                                    "HLA-DRB5",
+                                    "CD163",
+                                    "MRC1" #CD206
+                                    
+                                    ), split.by = "Tissue")
+```
+# Cluster markers together
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(micro_srt, features = c("DPP10", "MAGI2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(micro_srt, features = c("GPNMB", "RASGEF1C"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(micro_srt, features = c("LYVE1", "HIF1A"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+# Cluster QC based on resolution 0.4
+
+# Cluster QC
+
+#### Individuals per cluster
+How many individuals contribute to each cluster?
+
+```{r indiv-per-cluster}
+# count how many cells there are in each group and cluster
+sum_caseNO_cluster <- table(micro_srt$microglia_clu, micro_srt$caseNO)
+# For each cluster (on the rows) sum of individuals that do have cells on that cluster
+rowSums(sum_caseNO_cluster > 0)
+```
+Nothing stands out
+
+#### Percentage of cells that come from each individual
+
+Some of the clusters might be mainly from one person, even though other subjects
+do have some cells that cluster with it. To address this question we calculate
+for each cluster the proportion of cells that come from each caseNO.
+
+```{r prop-per-cluster}
+
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNO_table <- prop.table(sum_caseNO_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNO <- as.data.frame(prop_caseNO_table)
+colnames(prop_caseNO) <- c("cluster", "caseNO", "proportion")
+```
+
+Flag the clusters where one of the individuals covers more than 40% of the
+cluster. The expected would be around `1/20= 5%`
+
+```{r}
+prop_caseNO[prop_caseNO$proportion > 0.4, ]
+```
+
+
+#### Minimum threshold of 2% contribution to count individuals
+Another interesting variable is the number of individuals that contribute to
+more than a certain threshold (15%) to each cluster
+
+```{r min-pct}
+# Calculuate for each cluster the number of individuals that fulfill the condition of contributing more than a 15%
+num_individuals_gt_30pt <- rowSums(prop_caseNO_table > 0.30)
+# Sort the clusters by ascending order of number of individuals that contribute more than 2%
+sort(num_individuals_gt_30pt)
+#And a general overview of the data
+summary(num_individuals_gt_30pt)
+# Save the ones that are formed by less than 8 individuals that fulfill the condition
+clusters_fail <- rownames(prop_caseNO_table)[which(num_individuals_gt_30pt < 8)]
+
+clusters_fail
+```
+
+
+
+Plot the proportions for caseNo
+
+```{r prop-plot}
+# plot a barplot
+
+
+ggplot(data = prop_caseNO, aes(x = cluster, y = proportion, fill = caseNO)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20])
+```
+
+It is also worth keeping in mind the size of the cluster, there are in ascending
+order (0 is the biggest cluster and 10 the smallest).
+
+#### Samples instead of individuals
+
+The proportions are again calculated but taking into consideration the samples 
+instead of the individuals
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_caseNOtissue_cluster <- table(micro_srt$microglia_clu, micro_srt$process_number)
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNOtissue_table <- prop.table(sum_caseNOtissue_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNOtissue <- as.data.frame(prop_caseNOtissue_table)
+colnames(prop_caseNOtissue) <- c("cluster", "process_number", "proportion")
+prop_caseNOtissue[prop_caseNOtissue$proportion > 0.3, ]
+```
+## Conclusion of cluster QC
+I think the cluster QC looks fine.
+
+
+
+
+# Compositional differences with age, sex and regions 
+
+Some general distributions about the data. We started with equal number of
+sex/age/tissues but because we deleted samples these are not equal any more.
+Also the number of cells from each one might differ
+
+```{r general}
+# Number of samples per ageSex
+colSums(table(micro_srt$process_number, micro_srt$ageSex)>0)
+# Number of samples per tissue
+colSums(table(micro_srt$process_number, micro_srt$Tissue)>0)
+# Both things combined (there might be another way of doing this, but it works)#
+colSums(table(micro_srt$caseNO, micro_srt$ageSex, micro_srt$Tissue)>0)
+# Number of nuclei per sexage group
+table(micro_srt$ageSex)
+
+#number of nuclei per tissue
+table(micro_srt$Tissue)
+#number of nuclei per age group
+table(micro_srt$AgeGroup)
+#number of nuclei per sex group
+table(micro_srt$gender)
+
+# both things combined
+table(micro_srt$ageSex, micro_srt$Tissue)
+
+
+```
+
+
+
+## Age and Sex Grouping
+
+Separate by both things in 4 plots. The plots are corrected by number of cells
+per sexage group first (looking at the distribution of each group across
+clusters) and then corrected for the number of cells per cluster (to visualize
+the small and big clusters equally).
+
+```{r, fig.width=8, fig.height=8}
+# Sex
+# DimPlot(nad_ol, split.by = "ageSex", group.by = "Tissue", ncol = 5)
+DimPlot(micro_srt, split.by = "ageSex", group.by = "microglia_clu", ncol = 2,
+        cols = mycoloursP, pt.size = 2, label = TRUE, label.size = 6)
+```
+
+Calculate proportion clusters for each AgeSex
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_ageSex_cluster <- table(micro_srt$microglia_clu, micro_srt$ageSex)
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_ageSex_table_2 <- prop.table(sum_ageSex_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_ageSex_table_2_1 <- prop.table(prop_ageSex_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+
+prop_ageSex <- as.data.frame(prop_ageSex_table_2)
+colnames(prop_ageSex) <- c("cluster", "ageSex", "proportion")
+
+level_list <- c("Young women", "Old women", "Young men", "Old men")
+prop_ageSex$ageSex <- factor(prop_ageSex$ageSex, levels = level_list)
+
+
+# plot a barplot proportion
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+
+```
+
+Plot the same for Sex and Age separate
+
+```{r}
+# separate the sex and age
+prop_ageSex_sep <- separate(prop_ageSex, 
+                            col = ageSex, 
+                            into = c("age", "sex"), 
+                            sep = " ")
+
+
+
+
+# plot a barplot for the sex
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# And for the age
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Tissue
+
+split the clustering by the original tissues
+
+```{r, fig.width=8, fig.height=8}
+Idents(micro_srt) <- "microglia_clu"
+umap_clusters <- DimPlot(micro_srt, split.by = "Tissue", ncol = 2, 
+                         cols = mycoloursP, pt.size = 2, label = T) +NoLegend()
+umap_clusters
+```
+
+Calculate proportion clusters for each Tissue
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_tissue_cluster <- table(micro_srt$microglia_clu, micro_srt$Tissue)
+
+keep <- rowSums(sum_tissue_cluster) > 0
+sum_tissue_cluster <- sum_tissue_cluster[keep,]
+
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_tissue_table_2 <- prop.table(sum_tissue_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_tissue_table_2_1 <- prop.table(prop_tissue_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_tissue <- as.data.frame(prop_tissue_table_2)
+colnames(prop_tissue) <- c("cluster", "Tissue", "proportion")
+
+
+#plot
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  ylab("Normalised counts")
+```
+
+```{r}
+
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+```
+
+
+
+
+### tables shown with numbers
+
+To better understand the proportions I show the different steps with tables
+
+```{r}
+sum_ageSex_cluster
+(prop_ageSex_table_2)*100
+prop_ageSex_table_2_1*100
+```
+
+# Conclusion
+
+There are interesting differences in microglia with tissue region age and sex. 
+To do:
+  - Differential gene expression for age and sex separately for each tissue
+  - find best cluster marker genes from heat map to plot
+  - compare results to literature
+  
+  
+  https://link.springer.com/article/10.1186/s12974-020-01774-9
+  https://www.nature.com/articles/s41467-018-02926-5
+  https://www.sciencedirect.com/science/article/pii/S1471491419301030?casa_token=AAmJyjUSOvcAAAAA:Lq0kJTLkIua8YIHmcfBL31XhyLM3KD8WS2zj6e6V2umfeSbbU6sSxD55qIBMtLRwlQOQbFj95Q
+  https://pubmed.ncbi.nlm.nih.gov/30082275/
+  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6024879/#!po=12.5000
+  https://nnjournal.net/article/view/3357#B113
+  https://www.sciencedirect.com/science/article/pii/S221112472030019X
+  https://jneuroinflammation.biomedcentral.com/articles/10.1186/s12974-021-02124-z
+  https://www.sciencedirect.com/science/article/pii/S1074761318304850
+  
+  
+# Save dataset
+
+```{r, eval = FALSE}
+dir.create(here("data",
+                "single_nuc_data",
+                "microglia"))
+           
+saveRDS(micro_srt, here("data",
+                        "single_nuc_data",
+                        "microglia",
+                        "HCA_microglia.RDS"))
+
+```
+
+Associated with neurodegeneration in mice  (Krasemann et al., 2017)
+upregulated:
+```{r}
+VlnPlot(micro_srt, features = "SPP1", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "ITGAX", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "AXL", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "LILRB4", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CLEC7A", split.by = "AgeGroup")
+
+```
+
+
+```{r}
+VlnPlot(micro_srt, features = "CCL2", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CSF1", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "APOE", split.by = "AgeGroup")
+
+```
+
+Associated with neurodegeneration in mice  (Krasemann et al., 2017)
+downregulated:
+
+```{r}
+VlnPlot(micro_srt, features = "P2RY12", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "TMEM119", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CSF1R", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "RHOB", split.by = "AgeGroup")
+
+```
+
+
+```{r}
+VlnPlot(micro_srt, features = "CX3CR1", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "MEF2A", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "MAFB", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "SALL1", split.by = "AgeGroup")
+
+```
+
+Up in DAMS:
+TREM2 independent
+```{r}
+VlnPlot(micro_srt, features = "TYROBP", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "APOE", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "B2M", split.by = "AgeGroup")
+
+```
+TREM2-dependent
+
+```{r}
+VlnPlot(micro_srt, features = "TREM2", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "SPP1", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "ITGAX", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "AXL", split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(micro_srt, features = "LILRB4", split.by = "AgeGroup")
+
+```
+
+
+```{r}
+VlnPlot(micro_srt, features = "CLEC7A", split.by = "AgeGroup")
+
+```
+
+
+
+```{r}
+VlnPlot(micro_srt, features = "CTSL", split.by = "AgeGroup")
+
+```
+
+
+
+```{r}
+VlnPlot(micro_srt, features = "LPL", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CD9", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CSF1", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CD68", split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "LPL", split.by = "AgeGroup")
+
+```
+
+
+Markers of activation:
+reviewed by Amor et al 2021
+
+
+
+
+```{r}
+VlnPlot(micro_srt, features = "AIF1", split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(micro_srt, features = "CX3CR1", split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(micro_srt, features = "CD40", split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(micro_srt, features = "CD163", split.by = "AgeGroup")
+
+```
+```{r}
+#CD11B
+VlnPlot(micro_srt, features = "ITGAM", split.by = "AgeGroup")
+
+```
+```{r}
+#CD206
+VlnPlot(micro_srt, features = "MRC1", split.by = "AgeGroup")
+
+```
+
+```{r}
+#CD16
+VlnPlot(micro_srt, features = "FCGR3A", split.by = "AgeGroup")
+
+```
+```{r}
+#CD32
+VlnPlot(micro_srt, features = "FCGR2A", split.by = "AgeGroup")
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DMA", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DMB", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DRA", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DRB1", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DRB5", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DOA", split.by = "AgeGroup")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DOB", split.by = "AgeGroup")
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DPA1", split.by = "AgeGroup")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DPB1", split.by = "AgeGroup")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DQA1", split.by = "AgeGroup")
+
+```
+
+
+
+
+
+Sex differences in 
+```{r}
+
+VlnPlot(micro_srt, features = "RASGEF1B", split.by = "gender", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+  
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "RUNX1", split.by = "gender", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+```
+
+
+# Volcano plots
+
+Below are vulcano plots of age sex and pairwise tissue and the corresponding vln
+plots of the most interesting hits
+
+# Sex
+
+```{r, fig.height = 6, fig.width= 6}
+sex_markers$male_log2 <- ifelse(sex_markers$cluster == "M", 
+                           paste(sex_markers$avg_log2FC),
+                           paste(sex_markers$avg_log2FC * -1))
+
+sex_markers$male_log2 <- as.numeric(paste(sex_markers$male_log2))
+
+sex_markers$pval_plot <- ifelse(sex_markers$p_val_adj == 0, 
+                                paste(min(sex_markers$p_val_adj[sex_markers$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_markers$p_val_adj))
+
+sex_markers$pval_plot<- as.numeric(paste(sex_markers$pval_plot))
+
+fil_genes <- subset(sex_markers, abs(sex_markers$avg_log2FC) > 0.5 & 
+                      sex_markers$p_val_adj < 0.0001)
+
+fil_genes<- fil_genes$gene
+
+EnhancedVolcano(sex_markers,
+    lab = sex_markers$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs. female",
+    subtitle = "",
+    selectLab = fil_genes,
+    boxedLabels = TRUE,
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    #labFace = 'bold',
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black')
+
+
+EnhancedVolcano(sex_markers,
+    lab = sex_markers$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs female",
+    subtitle = "",
+    #boxedLabels = TRUE,
+    #drawConnectors = TRUE,
+    #widthConnectors = 1.0,
+    #colConnectors = 'black'
+)
+
+```
+
+
+```{r}
+
+
+Idents(micro_srt) <- "gender"
+sex_mark_p_n <- FindMarkers(micro_srt, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+sex_mark_p_n$pval_plot <- ifelse(sex_mark_p_n$p_val_adj == 0, 
+                                paste(min(sex_mark_p_n$p_val_adj[sex_mark_p_n$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_mark_p_n$p_val_adj))
+
+sex_mark_p_n$pval_plot<- as.numeric(paste(sex_mark_p_n$pval_plot))
+
+
+
+EnhancedVolcano(sex_mark_p_n,
+    lab = rownames(sex_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-2.2, 2.5),
+    #ylim = c(0, 50),
+    FCcutoff = 0.25,
+    title = "Male vs. Female",
+    subtitle = "Microglia",
+    selectLab = c("XIST", "UTY", "TTTY14", "LINC00278", "NLGN4Y", "TTTY14", "USP9Y",
+                  "IFI44L", "HSPA1A", "HSPA1B", "DUSP1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+
+```
+
+exclude gonosomal genes in plot
+```{r}
+
+EnhancedVolcano(sex_mark_p_n,
+    lab = rownames(sex_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-1.5, 1.5),
+    ylim = c(0, 30),
+    FCcutoff = 0.25,
+    
+    title = "Male vs. Female",
+    subtitle = "Microglia",
+    selectLab = c("IFI44L", "HSPA1A", "HSPA1B", "DUSP1", "KDM6A",
+                  "HLA-DRB5", "HLA-DRB1", "OLR1", "HSP90AA1", "ZFP36L1",
+                  "SCIN", "FKBP5", "IFI44", "KCNMA1", "UBC", "KCNMA1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+```
+
+
+Zoom in to lower p values
+```{r}
+EnhancedVolcano(sex_mark_p_n,
+    lab = rownames(sex_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-2.2, 2.5),
+    ylim = c(0, 30),
+    FCcutoff = 0.25,
+    title = "Male vs. Female",
+    subtitle = "Microglia",
+    #selectLab = c("XIST", "UTY", "TTTY14", "LINC00278", "NLGN4Y", "TTTY14", "USP9Y",
+    #              "IFI44L", "HSPA1A", "HSPA1B", "DUSP1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+
+
+```
+
+
+```{r}
+Idents(micro_srt) <- "gender"
+sex_mark <- FindMarkers(micro_srt, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+sex_mark$pval_plot <- ifelse(sex_mark$p_val_adj == 0, 
+                                paste(min(sex_mark$p_val_adj[sex_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_mark$p_val_adj))
+
+sex_mark$pval_plot<- as.numeric(paste(sex_mark$pval_plot))
+
+
+
+fil_sex <- subset(sex_mark, sex_mark$p_val_adj < 0.05)
+
+xsort <- fil_sex[order(fil_sex$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(sex_mark,
+    lab = rownames(sex_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-6, 5),
+    ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "Male vs. Female",
+    subtitle = "Microglia",
+    selectLab = c(top_x, bottom_x),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+```
+
+
+```{r}
+VlnPlot(micro_srt, features = "IFI44L", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "HLA-DRB5", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+
+```
+```{r}
+VlnPlot(micro_srt, features = "HSPA1A", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+## Age
+
+```{r, fig.height = 6, fig.width= 6}
+
+age_markers$old_log2 <- ifelse(age_markers$cluster == "Old", 
+                           paste(age_markers$avg_log2FC),
+                           paste(age_markers$avg_log2FC * -1))
+
+age_markers$old_log2 <- as.numeric(paste(age_markers$old_log2))
+
+age_markers$pval_plot <- ifelse(age_markers$p_val_adj == 0, 
+                                paste(min(age_markers$p_val_adj[age_markers$p_val_adj >0]) * 
+                                        0.01),
+                                paste(age_markers$p_val_adj))
+
+age_markers$pval_plot<- as.numeric(paste(age_markers$pval_plot))
+
+
+EnhancedVolcano(age_markers,
+    lab = age_markers$gene,
+    x = 'old_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Old vs. young",
+    subtitle = "")
+
+```
+
+```{r}
+
+Idents(micro_srt) <- "AgeGroup"
+age_mark <- FindMarkers(micro_srt, ident.1 = "Old",
+                          ident.2 = "Young",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+age_mark$pval_plot <- ifelse(age_mark$p_val_adj == 0, 
+                                paste(min(age_mark$p_val_adj[age_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(age_mark$p_val_adj))
+
+age_mark$pval_plot<- as.numeric(paste(age_mark$pval_plot))
+
+
+
+fil_age <- subset(age_mark, age_mark$p_val_adj < 0.05)
+
+xsort <- fil_age[order(fil_age$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(age_mark,
+    lab = rownames(age_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "Old vs. Young",
+    subtitle = "Microglia",
+    selectLab = c(top_x[1:3], bottom_x, "NEAT1", "CSGALNACT1", "CX3CR1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+```
+
+
+```{r}
+
+
+Idents(micro_srt) <- "AgeGroup"
+age_mark_p_n <- FindMarkers(micro_srt, ident.1 = "Old",
+                          ident.2 = "Young",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+age_mark_p_n$pval_plot <- ifelse(age_mark_p_n$p_val_adj == 0, 
+                                paste(min(age_mark_p_n$p_val_adj[age_mark_p_n$p_val_adj >0]) * 
+                                        0.01),
+                                paste(age_mark_p_n$p_val_adj))
+
+age_mark_p_n$pval_plot<- as.numeric(paste(age_mark_p_n$pval_plot))
+
+
+
+EnhancedVolcano(age_mark_p_n,
+    lab = rownames(age_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-2.2, 2.5),
+    #ylim = c(0, 50),
+    FCcutoff = 0.25,
+    title = "Old vs. Young",
+    subtitle = "Microglia",
+    selectLab = c("NEAT1", "IPCEF1", "HLA-C", "RTTN", "CYFIP1", "HLA_DRB1",
+                  "CD74", "B2M", "GLDN", "DUSP1", "APOE", "CSGALNACT1", "P2RY12"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+
+```
+
+
+
+```{r}
+VlnPlot(micro_srt, features = "IPCEF1", group.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(micro_srt, features = "RTTN", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CYFIP1", group.by = "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(micro_srt, features = "NEAT1", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "CSGALNACT1", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "GLDN", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "HLA-C", group.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(micro_srt, features = "DPYD", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "DUSP1", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(micro_srt, features = "PADI2", group.by = "AgeGroup")
+
+
+```
+
+# Pairwise tissue comparison to plot
+```{r, fig.height = 6, fig.width= 6}
+#CB vs BA4
+
+Idents(micro_srt) <- "Tissue"
+
+cb_ba4_mark <- FindMarkers(micro_srt, ident.1 = "CB",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25,
+                          test.use = "MAST")
+
+cb_ba4_mark$pval_plot <- ifelse(cb_ba4_mark$p_val_adj == 0, 
+                                paste(min(cb_ba4_mark$p_val_adj[cb_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(cb_ba4_mark$p_val_adj))
+
+cb_ba4_mark$pval_plot<- as.numeric(paste(cb_ba4_mark$pval_plot))
+
+
+fil_cb_ba4 <- subset(cb_ba4_mark, cb_ba4_mark$pval_plot < 0.001)
+
+xsort <- fil_cb_ba4[order(fil_cb_ba4$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CB vs. BA4",
+    subtitle = "Microglia",
+    selectLab = c( bottom_x, "DDX5","RHBDF2", "APOE"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+
+
+EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CB vs. BA4",
+    subtitle = "Microglia & macrophages")
+
+
+cb_ba4 <- EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CB vs. BA4",
+    subtitle = "Microglia",
+    selectLab = c( bottom_x, "DDX5","RHBDF2", "APOE"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+```
+```{r}
+
+VlnPlot(micro_srt, features = "DDX5", group.by = "Tissue")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "FKBP5", group.by = "Tissue")
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "DPYD", group.by = "Tissue")
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "RPS27", group.by = "Tissue")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "SLC1A3", group.by = "Tissue")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "ADGRB3", group.by = "Tissue")
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "NEAT1", group.by = "Tissue")
+
+```
+
+
+```{r, fig.height = 6, fig.width= 6}
+
+#CSC vs BA4
+
+csc_ba4_mark <- FindMarkers(micro_srt, ident.1 = "CSC",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+csc_ba4_mark$pval_plot <- ifelse(csc_ba4_mark$p_val_adj == 0, 
+                                paste(min(csc_ba4_mark$p_val_adj[csc_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_ba4_mark$p_val_adj))
+
+csc_ba4_mark$pval_plot<- as.numeric(paste(csc_ba4_mark$pval_plot))
+
+fil_csc_ba4 <- subset(csc_ba4_mark, csc_ba4_mark$pval_plot < 0.001)
+
+xsort <- fil_csc_ba4[order(fil_csc_ba4$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "Microglia",
+    #selectLab = c( top_x, bottom_x),
+    selectLab = c( top_x[3:6], bottom_x[4:6], "B2M", "CD74", "HLA-DPA1", 
+                   "HLA-DRB1","HLA-DPB1", "HLA-DRA"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "Microglia & macrophages")
+
+
+csc_ba4 <- EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CSC vs. BA4",
+    subtitle = "Microglia",
+    selectLab = c("HIF1A", "GRID2", "HLA-DRA", "B2M", "APOE", "HLA-DRB1", "CD74", 
+                  "AC008691.1", "P2RY12"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "P2RY12", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "ST6GALNAC3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "LINC02642", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "TANC1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "GRID2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DRA", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HLA-DRB1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "CD74", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "HIF1A", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "MBP", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "ACSL1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+
+```{r, fig.height = 6, fig.width= 6}
+
+#CSC vs CB
+
+csc_cb_mark <- FindMarkers(micro_srt, ident.1 = "CSC",
+                          ident.2 = "CB",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+csc_cb_mark$pval_plot <- ifelse(csc_cb_mark$p_val_adj == 0, 
+                                paste(min(csc_cb_mark$p_val_adj[csc_cb_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_cb_mark$p_val_adj))
+
+csc_cb_mark$pval_plot<- as.numeric(paste(csc_cb_mark$pval_plot))
+
+fil_csc_cb <- subset(csc_cb_mark, csc_cb_mark$pval_plot < 0.001)
+
+xsort <- fil_csc_cb[order(fil_csc_cb$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-6, 5),
+    ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CSC vs. CB",
+    subtitle = "Microglia",
+    selectLab = c( top_x, bottom_x, "PLP1", "KCNIP1", "GRID2", "PLXDC2" ),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. CB",
+    subtitle = "Microglia & macrophages")
+
+
+csc_cb <- EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-1.5, 2),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CSC vs. CB",
+    subtitle = "Microglia",
+    selectLab = c("HSPA1A", "HSPA1B", "KCNIP1", "IPCEF1", "GRID2", "HIF1A", 
+                  "CD74", 
+                  "TMEM119", "P2RY12", "HLA-DRA", "B2M", "APOE", "HLA-DRB1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+```
+
+
+```{r}
+
+VlnPlot(micro_srt, features = "KCNIP1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "IPCEF1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "PLP1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "H3F3B", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+
+VlnPlot(micro_srt, features = "UBC", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+genes <- c("CD74", 
+           "P2RY12",
+           #MI_5
+           "NRG3",
+           "RNF219-AS1",
+           "SORBS1",
+           "CTNND2",
+           "NTM", 
+           "MAGI2", 
+           "SCD", 
+           "PLP1", 
+           "NRG3", 
+           #MI_3
+           "PCDH9",
+           "EDIL3",
+           "PTPRD",
+           #BAM
+           "F13A1",
+           "CD163",
+           "LYVE1",
+           "MRC1",
+           "PID1",
+           #MI_4
+           "HIF1A",
+           "GNA13",
+           "RGS1",
+           "RANBP2",
+           "FAM110B",
+           "ACSL1", 
+           "CXCR4",
+           
+           #MI_1
+           "P2RY12",
+           "RASGEF1C",
+           "AC008691.1", 
+           "TLN2",
+           #MI_2
+           "GPNMB",
+           "MITF",
+           "APOC1",
+           "CPM",
+           # Immune
+           "HLA-A", 
+           "PTPRC",
+           #homeostatic
+           "P2RY13", 
+           "CX3CR1",
+           "TMEM119",
+           # activation
+           "CD68",
+           "TREM2" )
+
+
+invert_genes <- rev(genes)
+
+micro_srt$microglia_clu <- factor(micro_srt$microglia_clu, levels = c("Microglia_2",
+                                                                      "Microglia_1",
+                                                                      "Microglia_4",
+                                                                      "BAM", 
+                                                                      "Microglia_3",
+                                                                      "Microglia_5"))
+Idents(micro_srt) <- "microglia_clu"
+
+DotPlot(micro_srt, features = unique(genes))+ 
+  theme(axis.text.x = element_text(angle = 45, hjust=0.9))
+
+
+DotPlot(micro_srt, features = unique(invert_genes))+
+  theme(axis.text.x=element_text(angle=90,hjust=0.9,vjust=0.2)) + coord_flip()
+
+```
+
+```{r}
+FeaturePlot(micro_srt, features = c("CX3CR1", "TREM2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(micro_srt, features = c("CD163", "ACSL1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(micro_srt, features = c("CD163", "FAM110B"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(micro_srt, features = c("HIF1A", "TLN2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+
+Compare to GPNMB positive microglia in https://www.biorxiv.org/content/10.1101/2022.05.18.492475v1.full
+
+```{r}
+FeaturePlot(micro_srt, features = "GPNMB")
+FeaturePlot(micro_srt, features = "LGALS3")
+FeaturePlot(micro_srt, features = "PLIN2")
+FeaturePlot(micro_srt, features = "SOAT1")
+FeaturePlot(micro_srt, features = "ABCA1")
+
+```
+```{r}
+FeaturePlot(micro_srt, features = "GPNMB", split.by = "AgeGroup")
+
+FeaturePlot(micro_srt, features = "CDKN1A", split.by = "AgeGroup")
+FeaturePlot(micro_srt, features = "CDKN2A", split.by = "AgeGroup")
+
+
+```
+
+
+# Session Info
+
+
+
+```{r}
+
+sessionInfo()
+```

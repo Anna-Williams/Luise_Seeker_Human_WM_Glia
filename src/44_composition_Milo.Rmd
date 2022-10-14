@@ -1,0 +1,1006 @@
+---
+title: "Milo"
+author: "Luise A. Seeker"
+date: "22/10/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(here)
+library(miloR)
+library(dplyr)
+library(statmod)
+library(SingleCellExperiment)
+library(scater)
+library(patchwork)
+library(scran)
+```
+
+```{r}
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+
+```
+
+```{r}
+
+plot_levels <- c("Neur",
+                                                          "RELN_4",
+                                                          "RELN_3",
+                                                          "RELN_2",
+                                                          "RELN_1",
+                                                          "Ex_4",
+                                                          "Ex_3",
+                                                          "Ex_2",
+                                                          "Ex_1",
+                                                          "In_9",
+                                                          "In_8",
+                                                          "In_7",
+                                                          "In_6",
+                                                          "In_5",
+                                                          "In_4",
+                                                          "In_3",
+                                                          "In_2",
+                                                          "In_1",
+                                                          "vSMC",
+                                                          "Mural_vein_1",
+                                                          "Mural_cap_2",
+                                                          "Mural_cap_1",
+                                                          "EC_art_3",
+                                                          "EC_art_2",
+                                                          "EC_art_1",
+                                                          "EC_cap_5",
+                                                          "EC_cap_4",
+                                                          "EC_cap_3",
+                                                          "EC_cap_2",
+                                                          "EC_cap_1",
+                                                          "Immune",
+                                                          "BAM",
+                                                          "Microglia_5",
+                                                          "Microglia_4",
+                                                          "Microglia_3",
+                                                          "Microglia_2",
+                                                          "Microglia_1",
+                                                          "AS_12",
+                                                          "AS_11",
+                                                          "AS_10",
+                                                          "AS_9",
+                                                          "AS_8",
+                                                          "AS_7",
+                                                          "AS_6",
+                                                          "AS_5",
+                                                          "AS_4",
+                                                          "AS_3",
+                                                          "AS_2",
+                                                          "AS_1",
+                                                          "Oligo_F",
+                                                          "Oligo_E",
+                                                          "Oligo_D",
+                                                          "Oligo_C",
+                                                          "Oligo_B",
+                                                          "Oligo_A",
+                                                          "COP_C",
+                                                          "COP_B",
+                                                          "COP_A",
+                                                          "OPC_B",
+                                                          "OPC_A")
+```
+
+
+```{r}
+milo_meta <- seur@meta.data
+milo_obj <- Milo(as.SingleCellExperiment(seur))
+milo_obj
+
+```
+
+
+Build a graph and neighbourhoods.
+```{r}
+milo_obj <- buildGraph(milo_obj, k=30, d=30, reduced.dim = "PCA" )
+milo_obj <- makeNhoods(milo_obj, k=30, d=30, refined=TRUE, prop=0.2, reduced_dims = "PCA" )
+
+plotNhoodSizeHist(milo_obj)
+```
+Ideally, histogram should be peaking at 50 -100. Or the average neighbourhood size
+should be  over 5 x N_samples.Increasing k and/or
+prop during makeNhoods will shift distribution to the right. 
+
+
+# Calculate distances, count cells according to an experimental design and perform DA testing.
+
+```{r}
+#milo_obj <- calcNhoodDistance(milo_obj, d=30)
+milo_obj <- countCells(milo_obj, samples="uniq_id", meta.data=milo_meta)
+head(nhoodCounts(milo_obj))
+```
+
+```{r}
+milo_design <- data.frame(colData(milo_obj))[,c("uniq_id", "Tissue", "gender",
+                                                "AgeGroup", "caseNO")]
+
+## Convert batch info from integer to factor
+milo_design <- distinct(milo_design)
+rownames(milo_design) <- milo_design$uniq_id
+
+milo_design
+
+```
+
+
+
+```{r}
+milo_obj <- calcNhoodDistance(milo_obj, d=30, reduced.dim = "PCA")
+
+```
+
+
+Testing
+
+
+```{r}
+
+da_results <- testNhoods(milo_obj, design = ~ Tissue, design.df = milo_design)
+head(da_results)
+```
+
+
+```{r}
+da_results %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="Tissue", 
+                          text_by = "Fine_cluster", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results, layout="UMAP",alpha=0.1) 
+  
+umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+
+```
+
+
+```{r}
+da_results <- annotateNhoods(milo_obj, da_results, coldata_col = "Fine_cluster")
+head(da_results)
+
+```
+
+```{r}
+
+ggplot(da_results, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results$clust <- ifelse(da_results$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results$Fine_cluster_fraction)
+
+plotDAbeeswarm(da_results, group.by = "Fine_cluster")
+```
+
+# Pairwise tissue
+
+CB vs BA4
+```{r}
+
+
+da_results_cb_vs_ba4 <- testNhoods(milo_obj, design = ~ 0 + Tissue, design.df = milo_design,
+                         model.contrasts = c("TissueCB - TissueBA4"))
+head(da_results_cb_vs_ba4)
+```
+
+
+```{r}
+da_results_cb_vs_ba4 %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_cb_vs_ba4, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_cb_vs_ba4, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="Tissue", 
+                          text_by = "Fine_cluster", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_cb_vs_ba4, layout="UMAP",alpha=0.1) 
+  
+umap_cb_ba4 <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_cb_ba4
+```
+```{r}
+milo_dir_umap <- here("outs",
+                 "Milo_compositional_analysis",
+                 "umap_plots")
+
+                       
+pdf(file = here(milo_dir_umap, "Tissue_CB_vs_BA4"),   
+              width = 13, 
+              height = 7) 
+print(umap_cb_ba4)
+dev.off()
+
+```
+
+
+```{r}
+da_results_cb_vs_ba4 <- annotateNhoods(milo_obj, 
+                                       da_results_cb_vs_ba4, 
+                                       coldata_col = "Fine_cluster")
+head(da_results_cb_vs_ba4)
+
+```
+
+```{r}
+
+ggplot(da_results_cb_vs_ba4, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_cb_vs_ba4$clust <- ifelse(da_results_cb_vs_ba4$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_cb_vs_ba4$Fine_cluster_fraction)
+
+da_results_cb_vs_ba4$Fine_cluster <- factor(da_results_cb_vs_ba4$Fine_cluster,
+                                            levels = plot_levels)
+
+cb_ba4 <- plotDAbeeswarm(da_results_cb_vs_ba4, group.by = "Fine_cluster")
+
+cb_ba4
+```
+
+```{r}
+milo_dir_bees <- here("outs",
+                 "Milo_compositional_analysis",
+                 "beeswarm_plots")
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CB_vs_BA4"),   
+              width = 7, 
+              height = 13) 
+print(cb_ba4)
+dev.off()
+
+```
+
+
+
+# Pairwise tissue
+
+CB vs CSC
+```{r}
+
+
+da_results_cb_vs_csc <- testNhoods(milo_obj, design = ~ 0 + Tissue, design.df = milo_design,
+                         model.contrasts = c("TissueCB - TissueCSC"))
+head(da_results_cb_vs_csc)
+```
+
+
+```{r}
+da_results_cb_vs_csc %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_cb_vs_csc, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_cb_vs_csc, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_cb_vs_csc, layout="UMAP",alpha=0.1) 
+  
+umap_cb_csc <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_cb_csc
+```
+
+
+```{r}
+                       
+pdf(file = here(milo_dir_umap, "Tissue_CB_vs_CSC"),   
+              width = 13, 
+              height = 7) 
+print(umap_cb_csc)
+dev.off()
+
+```
+
+
+```{r}
+da_results_cb_vs_csc <- annotateNhoods(milo_obj, 
+                                       da_results_cb_vs_csc, 
+                                       coldata_col = "Fine_cluster")
+head(da_results_cb_vs_csc)
+
+```
+
+```{r}
+
+ggplot(da_results_cb_vs_csc, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_cb_vs_csc$clust <- ifelse(da_results_cb_vs_csc$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_cb_vs_csc$Fine_cluster_fraction)
+
+da_results_cb_vs_csc$Fine_cluster <- factor(da_results_cb_vs_csc$Fine_cluster,
+                                            levels = plot_levels)
+
+cb_csc <- plotDAbeeswarm(da_results_cb_vs_csc, group.by = "Fine_cluster")
+
+cb_csc
+```
+
+```{r}
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CB_vs_CSC"),   
+              width = 7, 
+              height = 13) 
+print(cb_csc)
+dev.off()
+
+```
+
+
+# Pairwise tissue
+
+CSC vs BA4
+```{r}
+
+
+da_results_csc_vs_ba4 <- testNhoods(milo_obj, design = ~ 0 + Tissue, design.df = milo_design,
+                         model.contrasts = c("TissueCSC - TissueBA4"))
+head(da_results_cb_vs_csc)
+```
+
+
+```{r}
+da_results_csc_vs_ba4 %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_csc_vs_ba4, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_csc_vs_ba4, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_csc_vs_ba4, layout="UMAP",alpha=0.1) 
+  
+umap_csc_ba4 <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_csc_ba4
+```
+
+
+```{r}
+                       
+pdf(file = here(milo_dir_umap, "Tissue_CSC_vs_BA4"),   
+              width = 13, 
+              height = 7) 
+print(umap_csc_ba4)
+dev.off()
+
+```
+
+
+```{r}
+da_results_csc_vs_ba4 <- annotateNhoods(milo_obj, 
+                                       da_results_csc_vs_ba4, 
+                                       coldata_col = "Fine_cluster")
+head(da_results_csc_vs_ba4)
+
+```
+
+```{r}
+
+ggplot(da_results_csc_vs_ba4, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_csc_vs_ba4$clust <- ifelse(da_results_csc_vs_ba4$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_csc_vs_ba4$Fine_cluster_fraction)
+
+da_results_csc_vs_ba4$Fine_cluster <- factor(da_results_csc_vs_ba4$Fine_cluster,
+                                            levels = plot_levels)
+
+csc_ba4 <- plotDAbeeswarm(da_results_csc_vs_ba4, group.by = "Fine_cluster")
+
+csc_ba4
+```
+
+```{r}
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CSC_vs_BA4"),   
+              width = 7, 
+              height = 13) 
+print(csc_ba4)
+dev.off()
+
+```
+
+
+###
+
+
+
+
+# Finding markers of DA populations
+
+## Automatic grouping of neighborhoods
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Find groups
+da_results <- groupNhoods(milo_obj, da_results, max.lfc.delta = 2)
+head(da_results)
+
+```
+
+```{r}
+
+plotNhoodGroups(milo_obj, da_results, layout="UMAP") 
+```
+
+
+```{r}
+
+plotDAbeeswarm(da_results, "NhoodGroup")
+```
+
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results, max.lfc.delta = 0.5), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.5")
+
+```
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results, max.lfc.delta = 0.2), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.2")
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results, max.lfc.delta = 1) , 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=1")
+
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results, max.lfc.delta = 1, 
+                           overlap=3), group.by = "NhoodGroup") + 
+  ggtitle("overlap=3")
+
+```
+
+
+```{r}
+set.seed(42)
+da_results <- groupNhoods(milo_obj, da_results, max.lfc.delta = 1, overlap=3)
+plotNhoodGroups(milo_obj, da_results, layout="UMAP")
+
+```
+
+
+
+```{r}
+plotDAbeeswarm(da_results, group.by = "NhoodGroup")
+
+```
+# Finding gene signatures for neighbourhoods
+
+```{r, eval = FALSE}
+keep_rows <- rowSums(logcounts(milo_obj)) != 0
+milo_obj <- milo_obj[keep_rows, ]
+
+## Find HVGs
+dec <- modelGeneVar(milo_obj)
+hvgs <- getTopHVGs(dec, n=2000)
+head(hvgs)
+```
+
+
+
+```{r, eval= F}
+nhood_markers <- findNhoodGroupMarkers(milo_obj, 
+                                       da_results, 
+                                       subset.row = hvgs, 
+                                       aggregate.samples = TRUE, 
+                                       sample_col = "uniq_id")
+
+head(nhood_markers)
+
+save_dir <- here("outs",
+                 "Milo_compositional_analysis",
+                 "Milo_neighbourhood_mark")
+dir.create(save_dir)
+write.csv(nhood_markers, here(save_dir,
+                              "Milo_neighbour_markers.csv"))
+```
+
+
+# Age 
+
+Testing
+
+
+```{r}
+da_results_age <- testNhoods(milo_obj, design = ~ Tissue + gender + AgeGroup, 
+                             design.df = milo_design)
+head(da_results_age)
+```
+
+
+```{r}
+da_results_age %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_age, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_age, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="AgeGroup", 
+                          text_by = "Fine_cluster", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_age, layout="UMAP",alpha=0.1) 
+  
+age_umap <-umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+age_umap
+```
+
+
+
+```{r}
+                       
+pdf(file = here(milo_dir_umap, "Age_corr_for_tissue_sex.pdf"),   
+              width = 13, 
+              height = 7) 
+print(age_umap)
+dev.off()
+
+```
+
+
+```{r}
+da_results_age <- annotateNhoods(milo_obj, da_results_age, coldata_col = "Fine_cluster")
+head(da_results_age)
+
+```
+
+```{r}
+
+da_results_age$Fine_cluster <- factor(da_results_age$Fine_cluster, 
+                                      levels = plot_levels)
+
+ggplot(da_results_age, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+
+
+```{r}
+da_results_age$clust <- ifelse(da_results_age$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_age$Fine_cluster_fraction)
+
+age_bees <- plotDAbeeswarm(da_results_age, group.by = "Fine_cluster")
+```
+
+
+```{r}
+milo_dir_bees <- here("outs",
+                 "Milo_compositional_analysis",
+                 "beeswarm_plots")
+
+                       
+pdf(file = here(milo_dir_bees, "Age_correct_for_tissue_sex.pdf"),   
+              width = 7, 
+              height = 13) 
+print(age_bees)
+dev.off()
+
+```
+
+
+
+# Finding markers of DA populations
+
+## Automatic grouping of neighborhoods
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Find groups
+da_results_age <- groupNhoods(milo_obj, da_results_age, max.lfc.delta = 2)
+head(da_results_age)
+
+```
+
+```{r}
+
+plotNhoodGroups(milo_obj, da_results_age, layout="UMAP") 
+```
+
+
+```{r}
+
+plotDAbeeswarm(da_results_age, "NhoodGroup")
+```
+
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_age, max.lfc.delta = 0.5), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.5")
+
+```
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_age, max.lfc.delta = 0.2), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.2")
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_age, max.lfc.delta = 1) , 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=1")
+
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_age, max.lfc.delta = 1, 
+                           overlap=3), group.by = "NhoodGroup") + 
+  ggtitle("overlap=3")
+
+```
+
+
+```{r}
+set.seed(42)
+da_results_age <- groupNhoods(milo_obj, da_results_age, max.lfc.delta = 1, overlap=3)
+plotNhoodGroups(milo_obj, da_results_age, layout="UMAP")
+
+```
+
+
+
+```{r}
+plotDAbeeswarm(da_results_age, group.by = "NhoodGroup")
+
+```
+# Finding gene signatures for neighbourhoods
+
+```{r, eval = FALSE}
+keep_rows <- rowSums(logcounts(milo_obj)) != 0
+milo_obj <- milo_obj[keep_rows, ]
+
+## Find HVGs
+dec <- modelGeneVar(milo_obj)
+hvgs <- getTopHVGs(dec, n=2000)
+head(hvgs)
+```
+
+
+
+```{r, eval= F}
+nhood_markers <- findNhoodGroupMarkers(milo_obj, 
+                                       da_results_age, 
+                                       subset.row = hvgs, 
+                                       aggregate.samples = TRUE, 
+                                       sample_col = "uniq_id")
+
+head(nhood_markers)
+
+save_dir <- here("outs",
+                 "Milo_compositional_analysis",
+                 "Milo_neighbourhood_mark")
+dir.create(save_dir)
+write.csv(nhood_markers, here(save_dir,
+                              "Milo_neighbour_markers.csv"))
+```
+
+
+
+# Sex
+
+Testing
+
+
+```{r}
+
+da_results_sex <- testNhoods(milo_obj, design = ~ Tissue+ AgeGroup+ gender, 
+                             design.df = milo_design)
+head(da_results_sex)
+```
+
+
+```{r}
+da_results_sex %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_sex, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_sex, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_sex, layout="UMAP",alpha=0.1) 
+  
+sex_umap <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+sex_umap
+```
+
+
+
+
+```{r}
+                       
+pdf(file = here(milo_dir_umap, "Sex_corr_for_tissue_age.pdf"),   
+              width = 13, 
+              height = 7) 
+print(sex_umap)
+dev.off()
+
+```
+
+
+```{r}
+da_results_sex <- annotateNhoods(milo_obj, da_results_sex, coldata_col = "Fine_cluster")
+head(da_results_sex)
+
+```
+
+```{r}
+da_results_sex$Fine_cluster <- factor(da_results_sex$Fine_cluster, 
+                                      levels = plot_levels)
+ggplot(da_results_sex, aes(Fine_cluster_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_sex$clust <- ifelse(da_results_sex$Fine_cluster_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_sex$Fine_cluster_fraction)
+
+sex_beeswarm <- plotDAbeeswarm(da_results_sex, group.by = "Fine_cluster")
+sex_beeswarm
+```
+
+
+```{r}
+
+pdf(file = here(milo_dir_bees, "Sex_corr_for_tissue_age.pdf"),   
+              width = 7, 
+              height = 13) 
+print(sex_beeswarm)
+dev.off()
+```
+
+
+# Finding markers of DA populations
+
+## Automatic grouping of neighborhoods
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Find groups
+da_results_sex <- groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 2)
+head(da_results_sex)
+
+```
+
+```{r}
+
+plotNhoodGroups(milo_obj, da_results_sex, layout="UMAP") 
+```
+
+
+```{r}
+
+plotDAbeeswarm(da_results_sex, "NhoodGroup")
+```
+
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 0.5), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.5")
+
+```
+
+```{r, fig.height = 5, fig.width = 7}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 0.2), 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=0.2")
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 1) , 
+               group.by = "NhoodGroup") + ggtitle("max LFC delta=1")
+
+
+```
+
+```{r}
+plotDAbeeswarm(groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 1, 
+                           overlap=3), group.by = "NhoodGroup") + 
+  ggtitle("overlap=3")
+
+```
+
+
+```{r}
+set.seed(42)
+da_results_sex <- groupNhoods(milo_obj, da_results_sex, max.lfc.delta = 1, overlap=3)
+plotNhoodGroups(milo_obj, da_results_sex, layout="UMAP")
+
+```
+
+
+
+```{r}
+plotDAbeeswarm(da_results_sex, group.by = "NhoodGroup")
+
+```
+# Finding gene signatures for neighbourhoods
+
+```{r, eval = FALSE}
+keep_rows <- rowSums(logcounts(milo_obj)) != 0
+milo_obj <- milo_obj[keep_rows, ]
+
+## Find HVGs
+dec <- modelGeneVar(milo_obj)
+hvgs <- getTopHVGs(dec, n=2000)
+head(hvgs)
+```
+
+
+
+```{r, eval= F}
+nhood_markers <- findNhoodGroupMarkers(milo_obj, 
+                                       da_results_sex, 
+                                       subset.row = hvgs, 
+                                       aggregate.samples = TRUE, 
+                                       sample_col = "uniq_id")
+
+head(nhood_markers)
+
+save_dir <- here("outs",
+                 "Milo_compositional_analysis",
+                 "Milo_neighbourhood_mark")
+dir.create(save_dir)
+write.csv(nhood_markers, here(save_dir,
+                              "Milo_neighbour_markers.csv"))
+```
+# Save data
+
+```{r}
+milo_dir <- here("data", "Milo_datasets")
+dir.create(milo_dir)
+saveRDS(milo_obj, here(milo_dir, "HCA_all_milo.RDS"))
+
+da_data_dir <- here("outs", "Milo_compositional_analysis",
+                    "differential_abundance")
+dir.create(da_data_dir)
+
+write.csv(da_results, here(da_data_dir, "da_results_tissue.csv"))
+write.csv(da_results_age, here(da_data_dir, "da_results_age.csv"))
+write.csv(da_results_sex, here(da_data_dir, "da_results_sex.csv"))
+
+```
+
+# Session info
+```{r}
+sessionInfo()
+
+```
+

@@ -1,0 +1,146 @@
+---
+title: "Age differences within CNS regions"
+author: "Luise A. Seeker"
+date: "17/09/2022"
+output: html_document
+---
+
+For a talk I am giving next week where the focus is on ageing, I would like to
+find out if tissue differences matter when it comes to how cells change their
+gene expression with age. 
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(here)
+library(ggplot2)
+library(stringr)
+library(ggvenn)
+```
+
+```{r}
+ol_path <- here("data",
+                "single_nuc_data",
+                "oligodendroglia",
+                "oligodendrocytes_only.RDS")
+
+opc_path <- here("data",
+                "single_nuc_data",
+                "oligodendroglia",
+                "opcs_only.RDS")
+
+mi_path <- here("data",
+                "single_nuc_data",
+                "microglia",
+                "HCA_microglia.RDS")
+
+as_path <- here("data",
+                "single_nuc_data",
+                "astrocytes",
+                "HCA_astrocytes.RDS")
+
+
+file_paths<- c(ol_path,opc_path, mi_path, as_path)
+
+for(i in  1:length(file_paths)){
+  srt<- readRDS(file_paths[i])
+  Idents(srt) <- "Tissue"
+  # subset for tissue and run DGE analyses separately
+  csc <- subset(srt, ident = "CSC")
+  Idents(csc) <- "AgeGroup"
+  csc_age_mark <- FindAllMarkers(csc, test.use = "MAST")
+  csc_age_mark$Tissue <- "CSC"
+  
+  ba4 <- subset(srt, ident = "BA4")
+  Idents(ba4) <- "AgeGroup"
+  ba4_age_mark <- FindAllMarkers(ba4, test.use = "MAST")
+  ba4_age_mark$Tissue <- "BA4"
+  
+  cb <- subset(srt, ident = "CB")
+  Idents(cb) <- "AgeGroup"
+  cb_age_mark <- FindAllMarkers(cb, test.use = "MAST")
+  cb_age_mark$Tissue <- "CB"
+  
+  
+  # filter for log fc and significant adjusted p-val, then split into
+  # separate marker lists for old and young for plottong
+  
+  fil_csc <- subset(csc_age_mark, csc_age_mark$p_val_adj < 0.05 & 
+                         csc_age_mark$avg_log2FC > 0.25)
+  fil_ba4 <- subset(ba4_age_mark, ba4_age_mark$p_val_adj < 0.05 & 
+                         ba4_age_mark$avg_log2FC > 0.25)
+  fil_cb <- subset(cb_age_mark, cb_age_mark$p_val_adj < 0.05 & 
+                         cb_age_mark$avg_log2FC > 0.25)
+  
+  old_csc <- subset(fil_csc, fil_csc$cluster == "Old")
+  old_ba4 <- subset(fil_ba4, fil_ba4$cluster == "Old")
+  old_cb <- subset(fil_cb, fil_cb$cluster == "Old")
+  
+  
+  young_csc <- subset(fil_csc, fil_csc$cluster == "Young")
+  young_ba4 <- subset(fil_ba4, fil_ba4$cluster == "Young")
+  young_cb <- subset(fil_cb, fil_cb$cluster == "Young")
+  
+
+  
+  # generate named lists for plotting venn diagrams
+  old_gene_list <- list()
+  old_gene_list[[1]]<-old_csc$gene
+  old_gene_list[[2]]<-old_ba4$gene
+  old_gene_list[[3]]<-old_cb$gene
+  
+  young_gene_list <- list()
+  young_gene_list[[1]]<-young_csc$gene
+  young_gene_list[[2]]<-young_ba4$gene
+  young_gene_list[[3]]<-young_cb$gene
+  
+  #compose names for named list that consist of cell type and tissue
+  
+  x <- strsplit(file_paths[i], "/")
+  x_length <- length(x[[1]])
+  cell_type <- x[[1]][x_length]
+  
+  cell_type_x <- strsplit(cell_type, ".R")
+  cell_type<- cell_type_x[[1]][1]
+  
+  csc_name <- paste0("CSC_", cell_type)
+  ba4_name <- paste0("BA4_", cell_type)
+  cb_name <- paste0("CB_", cell_type)
+  
+  # add names to lists
+  
+  names(old_gene_list) <- c(csc_name, ba4_name, cb_name)
+  names(young_gene_list) <- c(csc_name, ba4_name, cb_name)
+  
+  
+  #plot venn 
+  print(ggvenn(old_gene_list))
+  print(ggvenn(young_gene_list))
+  
+  # print intersect genes
+  y <- intersect(old_gene_list[[1]], 
+                 intersect(old_gene_list[[2]], old_gene_list[[3]]))
+  z <- intersect(young_gene_list[[1]], 
+                 intersect(young_gene_list[[2]], young_gene_list[[3]]))
+  print(paste0("Expression of following genes in increased in old ", cell_type, 
+               " across all tested CNS regions:"))
+  print(y)
+  
+  print(paste0("Expression of following genes in increased in young ", cell_type, 
+               " across all tested CNS regions:"))
+  print(z)
+  
+  
+  combined_dat <- rbind(fil_csc, fil_ba4, fil_cb)
+  write.csv(combined_dat, here("outs", 
+                                "DGE_within_tissue_all_glia",
+                                paste0(cell_type, ".csv")))
+ 
+}
+
+```
+
+```{r}
+
+sessionInfo()
+```

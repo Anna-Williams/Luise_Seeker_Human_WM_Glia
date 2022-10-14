@@ -1,0 +1,546 @@
+---
+title: "Validation_SPARC_OPALIN_OLIG2_IF"
+author: "Luise A. Seeker"
+date: "09/08/2022"
+output: html_document
+---
+
+OPALIN, SPARC and OLIG2 co-labelling using IF
+
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+library(Seurat)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+
+
+```{r}
+SPARC_opalin_olig2 <- read.csv(here("data", 
+                   "validation_data", 
+                   "SPARC_OPALIN_OLIG2_quantification.csv"))
+
+```
+
+
+```{r}
+names(SPARC_opalin_olig2)
+
+SPARC_opalin_olig2$tissue <- as.factor(SPARC_opalin_olig2$Tissue)
+
+
+SPARC_opalin_olig2$sample_id <- factor(SPARC_opalin_olig2$sample_id,
+                                     levels = c("SD008_18_BA4",
+                                                "SD012_15_BA4",
+                                                "SD031_14_BA4",
+                                                "SD001_07_CSC",
+                                                "SD039_14_CSC",
+                                                "SD061_13_CSC"))
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_Detections",
+                "Num_OLIG2",
+                "Num_OLIG2_OPALIN",
+                "Num_OPALIN",
+                "Num_SPARC",
+                "Num_SPARC_OLIG2",
+                "Num_SPARC_OLIG2_OPALIN",
+                "Num_SPARC_OPALIN")
+
+long_data <- gather(SPARC_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+Remove cells that are negative for all markers:
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_OLIG2_OPALIN",
+                "Num_OPALIN",
+                "Num_SPARC",
+                "Num_SPARC_OLIG2",
+                "Num_SPARC_OLIG2_OPALIN",
+                "Num_SPARC_OPALIN")
+
+long_data <- gather(SPARC_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+Remove cells that are negative no oligos:
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_OLIG2_OPALIN",
+                "Num_SPARC_OLIG2",
+                "Num_SPARC_OLIG2_OPALIN")
+
+long_data <- gather(SPARC_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+collapse to one column with all samples
+```{r}
+
+long_data$all_samples <- "all_samples"
+
+ggplot(long_data, aes(x = all_samples , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = all_samples, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+
+```{r}
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2_OPALIN",
+                "Num_SPARC_OLIG2",
+                "Num_SPARC_OLIG2_OPALIN")
+
+long_data <- gather(SPARC_opalin_olig2, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse to one column with all samples
+```{r}
+
+long_data$all_samples <- "all_samples"
+
+ggplot(long_data, aes(x = all_samples , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = all_samples, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+
+```{r}
+
+SPARC_opalin_olig2$perc_SPARC_olig2 <- 
+  (SPARC_opalin_olig2$Num_SPARC_OLIG2/(
+    SPARC_opalin_olig2$Num_SPARC_OLIG2+
+      SPARC_opalin_olig2$Num_OLIG2 +
+      SPARC_opalin_olig2$Num_OLIG2_OPALIN +
+      SPARC_opalin_olig2$Num_SPARC_OLIG2_OPALIN))*100
+
+SPARC_opalin_olig2$perc_opalin_olig2 <- 
+  (SPARC_opalin_olig2$Num_OLIG2_OPALIN/(
+    SPARC_opalin_olig2$Num_SPARC_OLIG2+
+      SPARC_opalin_olig2$Num_OLIG2 +
+      SPARC_opalin_olig2$Num_OLIG2_OPALIN +
+      SPARC_opalin_olig2$Num_SPARC_OLIG2_OPALIN))*100
+
+SPARC_opalin_olig2$perc_opalin_SPARC_olig2 <- 
+  (SPARC_opalin_olig2$Num_SPARC_OLIG2_OPALIN/(
+    SPARC_opalin_olig2$Num_SPARC_OLIG2+
+      SPARC_opalin_olig2$Num_OLIG2 +
+      SPARC_opalin_olig2$Num_OLIG2_OPALIN +
+      SPARC_opalin_olig2$Num_SPARC_OLIG2_OPALIN))*100
+
+
+ggplot(SPARC_opalin_olig2, aes(x = tissue, y = perc_SPARC_olig2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("SPARC+ OLIG2+ (%)") + xlab("Tissue")
+
+ggplot(SPARC_opalin_olig2, aes(x = tissue, y = perc_opalin_olig2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("OPALIN+ OLIG2+ (%)") + xlab("Tissue")
+
+ggplot(SPARC_opalin_olig2, aes(x = tissue, y = perc_opalin_SPARC_olig2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("OPALIN+ SPARC+ OLIG2+ (%)") + xlab("Tissue")
+
+```
+
+
+
+
+
+```{r}
+
+lm_prot_triple <- lm(SPARC_opalin_olig2$perc_opalin_SPARC_olig2~ SPARC_opalin_olig2$tissue)
+summary(lm_prot_triple)
+anova(lm_prot_triple)
+```
+
+
+
+```{r}
+kruskal.test(perc_opalin_SPARC_olig2 ~ tissue, data = SPARC_opalin_olig2)
+
+
+```
+
+```{r}
+nad_ol <-  readRDS(here("data", 
+                           "single_nuc_data", 
+                           "oligodendroglia",
+                           "srt_oligos_and_opcs_LS.RDS"))
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+
+```
+
+SPARC and OPALIN co-expression in snRNAseq
+
+```{r}
+
+oligos <- subset(nad_ol, idents = c("Oligo_A",
+                                    "Oligo_B",
+                                    "Oligo_C",
+                                    "Oligo_D",
+                                    "Oligo_E",
+                                    "Oligo_F"))
+Idents(oligos) <- "Tissue"
+ba4_ol <-subset(oligos, idents = "BA4")
+cb_ol <-subset(oligos, idents = "CB")
+csc_ol <-subset(oligos, idents = "CSC")
+
+
+SPARC <- 'SPARC' 
+OPALIN <- 'OPALIN' 
+SPARC.cutoff <- 1 
+OPALIN.cutoff <- 1 
+
+#BA4
+SPARC_cells_ba4 <- length(which(FetchData(ba4_ol, vars = SPARC) > SPARC.cutoff & 
+                                      FetchData(ba4_ol, vars = OPALIN) < OPALIN.cutoff))
+OPALIN_cells_ba4 <- length(which(FetchData(ba4_ol, vars = OPALIN) > OPALIN.cutoff& 
+                                      FetchData(ba4_ol, vars = SPARC) < SPARC.cutoff))
+SPARC_opalin_olig2_cells_ba4 <- length(which(FetchData(ba4_ol, vars = OPALIN) > OPALIN.cutoff & 
+                                      FetchData(ba4_ol, vars = SPARC) > SPARC.cutoff))
+all_cells_incluster_ba4 <- table(ba4_ol@active.ident)
+SPARC_ba4 <-SPARC_cells_ba4/all_cells_incluster_ba4 * 100 
+# Percentage of cells in dataset that express SPARC
+
+OPALIN_ba4 <- OPALIN_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that express OPALIN
+double_ba4 <- SPARC_opalin_olig2_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that co-express SPARC + OPALIN
+
+#CB
+SPARC_cells_cb <- length(which(FetchData(cb_ol, vars = SPARC) > SPARC.cutoff& 
+                                      FetchData(cb_ol, vars = OPALIN) < OPALIN.cutoff))
+OPALIN_cells_cb <- length(which(FetchData(cb_ol, vars = OPALIN) > OPALIN.cutoff& 
+                                      FetchData(cb_ol, vars = SPARC) < SPARC.cutoff))
+SPARC_opalin_olig2_cells_cb <- length(which(FetchData(cb_ol, vars = OPALIN) > 
+                                         OPALIN.cutoff & FetchData(cb_ol, vars = SPARC) >
+                                         SPARC.cutoff))
+all_cells_incluster_cb <- table(cb_ol@active.ident)
+SPARC_cb <- SPARC_cells_cb/all_cells_incluster_cb * 100 # Percentage of cells in dataset that express SPARC
+OPALIN_cb <- OPALIN_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that express OPALIN
+double_cb <- SPARC_opalin_olig2_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that co-express SPARC + OPALIN
+
+#CSC
+SPARC_cells_csc <- length(which(FetchData(csc_ol, vars = SPARC) > SPARC.cutoff& 
+                                      FetchData(csc_ol, vars = OPALIN) < OPALIN.cutoff))
+OPALIN_cells_csc <- length(which(FetchData(csc_ol, vars = OPALIN) > OPALIN.cutoff& 
+                                      FetchData(csc_ol, vars = SPARC) < SPARC.cutoff))
+SPARC_opalin_olig2_cells_csc <- length(which(FetchData(csc_ol, vars = OPALIN) > 
+                                          OPALIN.cutoff & FetchData(csc_ol, vars = SPARC) >
+                                          SPARC.cutoff))
+all_cells_incluster_csc <- table(csc_ol@active.ident)
+SPARC_csc <- SPARC_cells_csc/all_cells_incluster_csc * 100 
+# Percentage of cells in dataset that express SPARC
+OPALIN_csc <- OPALIN_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that express OPALIN
+double_csc <- SPARC_opalin_olig2_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that co-express SPARC + OPALIN
+
+df_snrna_seq <- data.frame(Tissue = c(rep("BA4", 4), 
+                                     rep("CB", 4),
+                                     rep("CSC", 4)),
+                           gene_expr = rep(c("SPARC+", 
+                                             "OPALIN+",
+                                             "SPARC+OPALIN+",
+                                             "Other Oligodendrocytes"), 3),
+                           percentage = c(as.numeric(SPARC_ba4), 
+                                          as.numeric(OPALIN_ba4),
+                                          as.numeric(double_ba4),
+                                          100 - (as.numeric(SPARC_ba4)+ 
+                                          as.numeric(OPALIN_ba4)+
+                                          as.numeric(double_ba4)),
+                                          
+                                          as.numeric(SPARC_cb), 
+                                          as.numeric(OPALIN_cb),
+                                          as.numeric(double_cb),
+                                          100 - (as.numeric(SPARC_cb)+ 
+                                          as.numeric(OPALIN_cb)+
+                                          as.numeric(double_cb)),
+                                          
+                                          
+                                          as.numeric(SPARC_csc), 
+                                          as.numeric(OPALIN_csc),
+                                          as.numeric(double_csc),
+                                          100 - (as.numeric(SPARC_csc)+ 
+                                          as.numeric(OPALIN_csc)+
+                                          as.numeric(double_csc))))
+
+
+ggplot(df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+```
+```{r}
+subs_df_snrna_seq <- subset(df_snrna_seq, df_snrna_seq$gene_expr !=
+                              "Other Oligodendrocytes")
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[25:50])
+```
+
+
+
+
+Conclusion:
+Based on the RNAseq dataset it looks like OPALIN and SpARC are rarely co-expressed. 
+
+
+
+```{r}
+sessionInfo()
+
+```

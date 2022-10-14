@@ -1,0 +1,296 @@
+---
+title: "Compositional_analysis"
+author: "Luise A. Seeker"
+date: "16/02/2021"
+output: html_document
+---
+
+# Introduction
+
+A proportional analysis of nuclei per cluster based on single nuclei RNAseq data
+is not trivial. Within a sample, proportions in one cluster may influence 
+proportions in other clusters because the maximum number of nuclei captured for
+each cell is limited. Fabian Theis' group developed a Bayesian model framework
+that considers all proportions in other clusters at the same time as the proportions
+in the cluster of interest. 
+[Buettner et al](https://www.biorxiv.org/content/10.1101/2020.12.14.422688v1.full.pdf). 
+
+They argue that univariate statistical models may overestimate proportional
+differences when performed for each cluster separately. 
+[Haber et al. 2017](https://www.nature.com/articles/nature24489) used fixed 
+effects Poisson models in which they investigated the number of nuclei per 
+cluster and fitted the total number of nuclei per mouse and also included the 
+condition group (treatment / control). 
+
+[Cao et al. 2019](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-019-3211-9)
+proposed a statistical analysis approach where they used bootstrapping and 
+univariate modelling for a compositional analysis and tested it 
+on simulated and published data. Their method is available as an R package 
+called [scDC](https://github.com/SydneyBioX/scDC) which is part of 
+[scdney](https://sydneybiox.github.io/scdney/articles/website/package.html). 
+The link to the promised Vignette is not very informative though. 
+
+Although we agree that more sophisticated methods may deliver more reliable results, 
+we use a simple univariate model approach here and argue that we will validate 
+our results in tissue meaning that our validations will show if the compositional
+analysis overestimated differences in proportions. 
+
+
+
+
+```{r}
+library(dplyr)
+library(lme4)
+library(nlme)
+library(lmerTest)
+library(RCurl)
+library(afex)  #for p-values
+library(MASS) # for negative binomial models
+library(blmeco) # for testing for overdispersion 
+
+
+```
+
+
+```{r}
+nad_ol <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs_LS.RDS")
+
+```
+
+
+
+# Prepare meta data in general
+counts per sample need to be added
+```{r}
+# get metadata
+md <- nad_ol@meta.data
+# count rows per sample (= number of nuclei per sample)
+total_df<- md %>% group_by(process_number) %>%
+  summarise(total_nuc_count = length(process_number))
+# merge with metadata
+md <- merge(md, total_df, by = "process_number")
+
+# the total nuclei number is on a very different scale than the number per
+# cluster. I am therefore re-scaling it here to allow the models to converge
+
+md$scaled_total_nuc <-as.numeric(md$total_nuc_count) / 500
+```
+
+# Prepare data for each cluster
+
+```{r}
+levels(md$ol_clusters_named)
+#Add counts per cluster and sample to metadata
+
+for(i in 1: length(levels(md$ol_clusters_named))){
+  curr_clust <- subset(md, md$ol_clusters_named == levels(md$ol_clusters_named)[i])
+  df<- curr_clust %>% group_by(process_number) %>% 
+    summarise(nuc_count = 
+                length(process_number))
+  names(df) <- c("process_number",
+                 paste("nuc_count_", levels(md$ol_clusters_named)[i], sep = ""))
+
+  md <- merge(md, df, by = "process_number", all = TRUE)
+}
+
+
+
+
+#now make data unique for the sample (1 row per sample)
+
+md_uniq <- md[!duplicated(md$process_number),]
+
+#I thought it might be a good idea to correct for cluster size, but this does
+# not make sense if only one cluster at a time is being investigated.
+
+#Idents(nad_ol) <- "ol_clusters_named"
+#nuc_per_clu <- as.data.frame(table(Idents(nad_ol)))
+#names(nuc_per_clu) <- c("ol_clusters_named", "clu_size")
+
+#md_uniq <- merge(md_uniq, nuc_per_clu, by = "ol_clusters_named" )
+
+#md_uniq$cl_size_rescaled <- md_uniq$clu_size/500
+```
+
+
+Mixed poisson models
+```{r}
+save_dir <- "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mix_mod_out/Poisson/oligos"
+dir.create(save_dir, recursive = TRUE)
+
+
+resp_var <- names(md_uniq)[c(82:83, 87:92)]
+
+for(i in 1:length(resp_var)){
+  temp_df <- subset(md_uniq, md_uniq[resp_var[i]] != "NA")
+  colname <- resp_var[i]
+  mod <- glmer(as.numeric(paste(temp_df[[colname]])) ~ gender + 
+                 AgeGroup + 
+                 Tissue + 
+                 scaled_total_nuc +
+                 (1 | caseNO) , 
+               data = temp_df, family = poisson(link = "log"))
+  print(dispersion_glmer(mod))
+  s <- summary(mod)
+  capture.output(s, file = paste(save_dir, 
+                                 "/", 
+                                 resp_var[i], 
+                                 "pois_mod_out.txt", 
+                                 sep = ""))
+}
+  
+
+
+```
+
+# Use similar models for the whole dataset
+
+```{r}
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_annotated_nadine/srt_anno_01.RDS")
+
+
+```
+
+
+counts per sample need to be added
+```{r}
+# get metadata
+met_dat <- seur_comb@meta.data
+# count rows per sample (= number of nuclei per sample)
+total_df<- met_dat %>% group_by(process_number) %>%
+  summarise(total_nuc_count = length(process_number))
+# merge with metadata
+met_dat <- merge(met_dat, total_df, by = "process_number")
+
+# the total nuclei number is on a very different scale than the number per
+# cluster. I am therefore re-scaling it here to allow the models to converge
+
+met_dat$scaled_total_nuc <-as.numeric(met_dat$total_nuc_count) / 1000
+```
+
+# Prepare data for each cluster
+
+
+```{r}
+levels(met_dat$clusters_named)
+#Add counts per cluster and sample to metadata
+
+for(i in 1: length(levels(met_dat$clusters_named))){
+  curr_clust <- subset(met_dat, met_dat$clusters_named == 
+                         levels(met_dat$clusters_named)[i])
+  df<- curr_clust %>% group_by(process_number) %>% 
+    summarise(nuc_count = 
+                length(process_number))
+  names(df) <- c("process_number", paste("nuc_count_", levels(met_dat$clusters_named)[i], sep = ""))
+
+  met_dat <- merge(met_dat, df, by = "process_number", all = TRUE)
+}
+
+
+
+
+#now make data unique for the sample (1 row per sample)
+
+met_dat_uniq <- met_dat[!duplicated(met_dat$process_number),]
+```
+
+
+Mixed Poisson models
+```{r}
+
+resp_var_ct <- names(met_dat_uniq)[87:109]
+
+for(i in 1:length(resp_var_ct)){
+  temp_df <- subset(met_dat_uniq, met_dat_uniq[resp_var_ct[i]] != "NA")
+  colname <- resp_var_ct[i]
+  mod <- glmer(as.numeric(paste(temp_df[[colname]])) ~ gender + 
+                 AgeGroup + 
+                 gender * AgeGroup +
+                 Tissue + 
+                 scaled_total_nuc +
+                 (1 | caseNO) , 
+               data = temp_df, family = poisson(link = "log"))
+  dispersion_glmer(mod)
+  s <- summary(mod)
+  capture.output(s, file = paste(save_dir, 
+                                 "/", 
+                                 resp_var_ct[i], 
+                                 "pois_mod_out.txt", 
+                                 sep = ""))
+  
+}
+
+
+```
+
+
+# Use mixed negative binomial models
+Negative binomial models might be more fitting, because Poisson models expect 
+that mean and variance are the same. If data is overdispersed, negative binomial 
+models are more suitable. 
+
+```{r}
+
+save_dir <- "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mix_mod_out/neg_binomial_mod/oligos"
+dir.create(save_dir)
+
+
+resp_var <- names(md_uniq)[c(82:83, 87:92)]
+md_uniq$Tissue <- as.factor(md_uniq$Tissue)
+
+for(i in 1:length(resp_var)){
+  temp_df <- subset(md_uniq, md_uniq[resp_var[i]] != "NA")
+  colname <- resp_var[i]
+  mod <- glmer.nb(as.numeric(paste(temp_df[[colname]])) ~ gender + 
+                 AgeGroup + 
+                 Tissue+
+                 scaled_total_nuc+
+                 (1 | caseNO), 
+               data = temp_df)
+  s <- summary(mod)
+  capture.output(s, file = paste(save_dir, 
+                                 "/", 
+                                 resp_var[i], 
+                                 "neg_binomial_mod.txt", 
+                                 sep = ""))
+  print(dispersion_glmer(mod))
+}
+
+```
+
+# Negative binomial models for the full dataset
+
+```{r}
+
+save_dir <- "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/mix_mod_out/neg_binomial_mod/full_dataset"
+dir.create(save_dir)
+resp_var_ct <- names(met_dat_uniq)[87:109]
+
+for(i in 1:length(resp_var_ct)){
+  temp_df <- subset(met_dat_uniq, met_dat_uniq[resp_var_ct[i]] != "NA")
+  colname <- resp_var_ct[i]
+  mod <- glmer.nb(as.numeric(paste(temp_df[[colname]])) ~ gender + 
+                 AgeGroup + 
+                 Tissue+
+                 scaled_total_nuc+
+                 (1 | caseNO), 
+               data = temp_df)
+  print(dispersion_glmer(mod))
+  s <- summary(mod)
+  capture.output(s, file = paste(save_dir, 
+                                 "/", 
+                                 resp_var_ct[i], 
+                                 "neg_binom_mod_out.txt", 
+                                 sep = ""))
+  
+}
+
+```
+
+
+
+
+
+```{r}
+sessionInfo()
+```

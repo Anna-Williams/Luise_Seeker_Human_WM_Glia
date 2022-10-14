@@ -1,0 +1,859 @@
+---
+title: "Milo"
+author: "Luise A. Seeker"
+date: "22/10/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(here)
+library(miloR)
+library(dplyr)
+library(statmod)
+library(SingleCellExperiment)
+library(scater)
+library(patchwork)
+library(scran)
+library(gridExtra)
+```
+
+```{r}
+seur <- readRDS(here("data",
+                     "single_nuc_data",
+                     "microglia",
+                     "HCA_microglia.RDS"))
+
+```
+
+```{r}
+
+plot_levels <- c("Microglia_1",
+                 "Microglia_2",
+                 "Microglia_3",
+                 "Microglia_4",
+                 "Microglia_5",
+                 "BAM")
+```
+
+
+```{r}
+milo_meta <- seur@meta.data
+milo_obj <- Milo(as.SingleCellExperiment(seur))
+milo_obj
+
+```
+
+
+Build a graph and neighbourhoods.
+```{r}
+milo_obj <- buildGraph(milo_obj, k=30, d=30, reduced.dim = "PCA" )
+milo_obj <- makeNhoods(milo_obj, k=30, d=30, refined=TRUE, prop=0.2, reduced_dims = "PCA" )
+
+plotNhoodSizeHist(milo_obj)
+```
+Ideally, histogram should be peaking at 50 -100. Or the average neighbourhood size
+should be  over 5 x N_samples.Increasing k and/or
+prop during makeNhoods will shift distribution to the right. 
+
+
+# Calculate distances, count cells according to an experimental design and perform DA testing.
+
+```{r}
+#milo_obj <- calcNhoodDistance(milo_obj, d=30)
+milo_obj <- countCells(milo_obj, samples="uniq_id", meta.data=milo_meta)
+head(nhoodCounts(milo_obj))
+```
+
+```{r}
+milo_design <- data.frame(colData(milo_obj))[,c("uniq_id", "Tissue", "gender",
+                                                "AgeGroup", "caseNO")]
+
+## Convert batch info from integer to factor
+milo_design <- distinct(milo_design)
+rownames(milo_design) <- milo_design$uniq_id
+
+milo_design
+
+```
+
+
+
+```{r}
+milo_obj <- calcNhoodDistance(milo_obj, d=30, reduced.dim = "PCA")
+
+```
+
+
+Testing
+
+
+```{r}
+
+da_results <- testNhoods(milo_obj, design = ~ Tissue, design.df = milo_design)
+head(da_results)
+```
+
+
+```{r}
+da_results %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="Tissue", 
+                          text_by = "microglia_clu", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results, layout="UMAP",alpha=0.1) 
+  
+umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+
+```
+
+
+```{r}
+da_results <- annotateNhoods(milo_obj, da_results, coldata_col = "microglia_clu")
+head(da_results)
+
+```
+
+```{r}
+
+ggplot(da_results, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results$clust <- ifelse(da_results$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results$microglia_clu_fraction)
+
+plotDAbeeswarm(da_results, group.by = "microglia_clu")
+```
+
+# Pairwise tissue
+CB vs BA4 
+```{r}
+Idents(seur) <- "Tissue"
+cb_ba4_srt <- subset(seur, idents = c("CB", "BA4"))
+milo_meta_cb_ba4 <- cb_ba4_srt@meta.data
+milo_obj <- Milo(as.SingleCellExperiment(cb_ba4_srt))
+milo_obj
+
+```
+
+
+Build a graph and neighbourhoods.
+```{r}
+milo_obj <- buildGraph(milo_obj, k=30, d=30, reduced.dim = "PCA" )
+milo_obj <- makeNhoods(milo_obj, k=30, d=30, refined=TRUE, prop=0.2, reduced_dims = "PCA" )
+
+plotNhoodSizeHist(milo_obj)
+```
+Ideally, histogram should be peaking at 50 -100. Or the average neighbourhood size
+should be  over 5 x N_samples.Increasing k and/or
+prop during makeNhoods will shift distribution to the right. 
+
+
+# Calculate distances, count cells according to an experimental design and perform DA testing.
+
+```{r}
+#milo_obj <- calcNhoodDistance(milo_obj, d=30)
+milo_obj <- countCells(milo_obj, samples="uniq_id", meta.data=milo_meta_cb_ba4)
+head(nhoodCounts(milo_obj))
+```
+
+```{r}
+milo_design <- data.frame(colData(milo_obj))[,c("uniq_id", "Tissue", "gender",
+                                                "AgeGroup", "caseNO")]
+
+## Convert batch info from integer to factor
+milo_design <- distinct(milo_design)
+rownames(milo_design) <- milo_design$uniq_id
+
+milo_design
+
+```
+
+
+
+```{r}
+set.seed(1001)
+milo_obj <- calcNhoodDistance(milo_obj, d=30, reduced.dim = "PCA")
+
+```
+
+
+```{r}
+
+set.seed(1001)
+
+
+da_results_cb_vs_ba4 <- testNhoods(milo_obj, design = ~ 0 + Tissue, design.df = milo_design,
+                         model.contrasts = c("TissueCB - TissueBA4"))
+
+
+head(da_results_cb_vs_ba4)
+```
+
+
+```{r}
+da_results_cb_vs_ba4 %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_cb_vs_ba4, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_cb_vs_ba4, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="Tissue", 
+                          text_by = "microglia_clu", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_cb_vs_ba4, layout="UMAP",alpha=0.1) 
+  
+umap_cb_ba4 <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_cb_ba4
+```
+
+```{r}
+milo_save_dir <- here("outs",
+                 "Milo_compositional_analysis",
+                 "microglia_only",
+                 "umap_plots")
+
+dir.create(milo_save_dir, recursive = T)
+
+                       
+pdf(file = here(milo_save_dir, "Tissue_CB_vs_BA4_noCSC"),   
+              width = 13, 
+              height = 7) 
+print(umap_cb_ba4)
+dev.off()
+
+```
+
+
+```{r}
+da_results_cb_vs_ba4 <- annotateNhoods(milo_obj, 
+                                       da_results_cb_vs_ba4, 
+                                       coldata_col = "microglia_clu")
+head(da_results_cb_vs_ba4)
+
+```
+
+```{r}
+
+ggplot(da_results_cb_vs_ba4, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_cb_vs_ba4$clust <- ifelse(da_results_cb_vs_ba4$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_cb_vs_ba4$microglia_clu_fraction)
+
+da_results_cb_vs_ba4$microglia_clu <- factor(da_results_cb_vs_ba4$microglia_clu,
+                                            levels = plot_levels)
+
+cb_ba4 <- plotDAbeeswarm(da_results_cb_vs_ba4, group.by = "microglia_clu")
+
+cb_ba4
+```
+
+```{r}
+milo_dir_bees <- here("outs",
+                 "Milo_compositional_analysis",
+                 "microglia_only",
+                 "beeswarm_plots")
+
+dir.create(milo_dir_bees, recursive = T)
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CB_vs_BA4_noCSC"),   
+              width = 7, 
+              height = 13) 
+print(cb_ba4)
+dev.off()
+
+```
+
+
+
+# Pairwise tissue
+
+CB vs CSC
+```{r}
+Idents(seur) <- "Tissue"
+cb_csc_srt <- subset(seur, idents = c("CSC", "CB"))
+
+milo_meta_cb_csc <- cb_csc_srt@meta.data
+milo_obj <- Milo(as.SingleCellExperiment(cb_csc_srt))
+milo_obj
+```
+
+Build a graph and neighbourhoods.
+```{r}
+milo_obj <- buildGraph(milo_obj, k=30, d=30, reduced.dim = "PCA" )
+milo_obj <- makeNhoods(milo_obj, k=30, d=30, refined=TRUE, prop=0.2, reduced_dims = "PCA" )
+
+plotNhoodSizeHist(milo_obj)
+```
+
+
+# Calculate distances, count cells according to an experimental design and perform DA testing.
+
+```{r}
+#milo_obj <- calcNhoodDistance(milo_obj, d=30)
+milo_obj <- countCells(milo_obj, samples="uniq_id", meta.data=milo_meta_cb_csc)
+head(nhoodCounts(milo_obj))
+```
+
+```{r}
+milo_design <- data.frame(colData(milo_obj))[,c("uniq_id", "Tissue", "gender",
+                                                "AgeGroup", "caseNO")]
+
+## Convert batch info from integer to factor
+milo_design <- distinct(milo_design)
+rownames(milo_design) <- milo_design$uniq_id
+
+milo_design
+
+```
+
+
+
+```{r}
+set.seed(1001)
+milo_obj <- calcNhoodDistance(milo_obj, d=30, reduced.dim = "PCA")
+
+```
+
+
+```{r}
+
+set.seed(1001)
+
+
+da_results_cb_vs_csc <- testNhoods(milo_obj, design = ~ 0 + Tissue, 
+                                   design.df = milo_design,
+                         model.contrasts = c("TissueCB - TissueCSC"))
+head(da_results_cb_vs_csc)
+```
+
+
+```{r}
+da_results_cb_vs_csc %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_cb_vs_csc, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_cb_vs_csc, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj) 
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_cb_vs_csc, layout="UMAP",alpha=0.1) 
+  
+umap_cb_csc <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_cb_csc
+```
+
+
+```{r}
+                       
+pdf(file = here(milo_save_dir, "Tissue_CB_vs_CSC_noBA4"),   
+              width = 13, 
+              height = 7) 
+print(umap_cb_csc)
+dev.off()
+
+```
+
+
+```{r}
+da_results_cb_vs_csc <- annotateNhoods(milo_obj, 
+                                       da_results_cb_vs_csc, 
+                                       coldata_col = "microglia_clu")
+head(da_results_cb_vs_csc)
+
+```
+
+```{r}
+
+ggplot(da_results_cb_vs_csc, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_cb_vs_csc$clust <- ifelse(da_results_cb_vs_csc$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_cb_vs_csc$microglia_clu_fraction)
+
+da_results_cb_vs_csc$microglia_clu <- factor(da_results_cb_vs_csc$microglia_clu,
+                                            levels = plot_levels)
+
+cb_csc <- plotDAbeeswarm(da_results_cb_vs_csc, group.by = "microglia_clu")
+
+cb_csc
+```
+
+```{r}
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CB_vs_CSC"),   
+              width = 7, 
+              height = 13) 
+print(cb_csc)
+dev.off()
+
+```
+
+
+# Pairwise tissue
+
+CSC vs BA4
+
+```{r}
+Idents(seur) <- "Tissue"
+csc_ba4_srt <- subset(seur, idents = c("CSC", "BA4"))
+milo_meta_csc_ba4 <- csc_ba4_srt@meta.data
+milo_obj <- Milo(as.SingleCellExperiment(csc_ba4_srt))
+milo_obj
+
+```
+
+
+Build a graph and neighbourhoods.
+```{r}
+milo_obj <- buildGraph(milo_obj, k=30, d=30, reduced.dim = "PCA" )
+milo_obj <- makeNhoods(milo_obj, k=30, d=30, refined=TRUE, prop=0.2, reduced_dims = "PCA" )
+
+plotNhoodSizeHist(milo_obj)
+```
+Ideally, histogram should be peaking at 50 -100. Or the average neighbourhood size
+should be  over 5 x N_samples.Increasing k and/or
+prop during makeNhoods will shift distribution to the right. 
+
+
+# Calculate distances, count cells according to an experimental design and perform DA testing.
+
+```{r}
+#milo_obj <- calcNhoodDistance(milo_obj, d=30)
+milo_obj <- countCells(milo_obj, samples="uniq_id", meta.data=milo_meta_csc_ba4)
+head(nhoodCounts(milo_obj))
+```
+
+```{r}
+milo_design <- data.frame(colData(milo_obj))[,c("uniq_id", "Tissue", "gender",
+                                                "AgeGroup", "caseNO")]
+
+## Convert batch info from integer to factor
+milo_design <- distinct(milo_design)
+rownames(milo_design) <- milo_design$uniq_id
+
+milo_design
+
+```
+
+
+
+```{r}
+set.seed(1001)
+milo_obj <- calcNhoodDistance(milo_obj, d=30, reduced.dim = "PCA")
+
+```
+
+```{r}
+
+
+da_results_csc_vs_ba4 <- testNhoods(milo_obj, design = ~ 0 + Tissue, design.df = milo_design,
+                         model.contrasts = c("TissueCSC - TissueBA4"))
+
+head(da_results_csc_vs_ba4)
+```
+
+
+```{r}
+da_results_csc_vs_ba4 %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_csc_vs_ba4, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_csc_vs_ba4, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_csc_vs_ba4, layout="UMAP",alpha=0.1) 
+  
+umap_csc_ba4 <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+umap_csc_ba4
+```
+
+
+```{r}
+                       
+pdf(file = here(milo_save_dir, "Tissue_CSC_vs_BA4_noCB"),   
+              width = 13, 
+              height = 7) 
+print(umap_csc_ba4)
+dev.off()
+
+```
+
+
+```{r}
+da_results_csc_vs_ba4 <- annotateNhoods(milo_obj, 
+                                       da_results_csc_vs_ba4, 
+                                       coldata_col = "microglia_clu")
+head(da_results_csc_vs_ba4)
+
+```
+
+```{r}
+
+ggplot(da_results_csc_vs_ba4, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_csc_vs_ba4$clust <- ifelse(da_results_csc_vs_ba4$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_csc_vs_ba4$microglia_clu_fraction)
+
+da_results_csc_vs_ba4$microglia_clu <- factor(da_results_csc_vs_ba4$microglia_clu,
+                                            levels = plot_levels)
+
+csc_ba4 <- plotDAbeeswarm(da_results_csc_vs_ba4, group.by = "microglia_clu")
+
+csc_ba4
+```
+
+```{r}
+
+grid.arrange(csc_ba4, cb_ba4, cb_csc, ncol = 3)
+
+```
+
+
+```{r}
+
+                       
+pdf(file = here(milo_dir_bees, "Tissue_CSC_vs_BA4_noCB"),   
+              width = 7, 
+              height = 13) 
+print(csc_ba4)
+dev.off()
+
+```
+
+
+
+
+# Age 
+
+Testing
+
+
+```{r}
+da_results_age <- testNhoods(milo_obj, design = ~ Tissue + gender + AgeGroup, 
+                             design.df = milo_design)
+head(da_results_age)
+```
+
+
+```{r}
+da_results_age %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_age, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_age, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+milo_obj <- buildNhoodGraph(milo_obj)
+
+## Plot single-cell UMAP
+umap_pl <- plotReducedDim(milo_obj, dimred = "UMAP", colour_by="AgeGroup", 
+                          text_by = "microglia_clu", 
+                          text_size = 3, point_size=0.5) +
+  guides(fill="none")
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_age, layout="UMAP",alpha=0.1) 
+  
+age_umap <-umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+age_umap
+```
+
+```{r}
+da_results_age <- annotateNhoods(milo_obj, 
+                                       da_results_age, 
+                                       coldata_col = "microglia_clu")
+head(da_results_age)
+
+```
+
+```{r}
+
+ggplot(da_results_age, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+```{r}
+da_results_age$clust <- ifelse(da_results_age$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_age$microglia_clu_fraction)
+
+da_results_age$microglia_clu <- as.factor(factor(da_results_age$microglia_clu,
+                                            levels = plot_levels))
+da_results_age$clust<- as.numeric(da_results_age$clust)
+
+plotDAbeeswarm(da_results_age, group.by = "microglia_clu")
+
+```
+
+```{r}
+                       
+pdf(file = here(milo_save_dir, "Age_corr_for_tissue_sex_microglia.pdf"),   
+              width = 13, 
+              height = 7) 
+print(age_umap)
+dev.off()
+
+```
+
+
+```{r}
+da_results_age <- annotateNhoods(milo_obj, da_results_age, coldata_col = "Microglia_clu")
+head(da_results_age)
+
+```
+
+```{r}
+
+da_results_age$microglia_clu <- factor(da_results_age$microglia_clu, 
+                                      levels = plot_levels)
+
+ggplot(da_results_age, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+
+
+```{r}
+da_results_age$clust <- ifelse(da_results_age$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_age$microglia_clu_fraction)
+
+age_bees <- plotDAbeeswarm(da_results_age, group.by = "microglia_clu")
+```
+
+
+```{r}
+milo_dir_bees <- here("outs",
+                 "Milo_compositional_analysis",
+                 "beeswarm_plots")
+
+                       
+pdf(file = here(milo_dir_bees, "Age_correct_for_tissue_sex_microglia.pdf"),   
+              width = 7, 
+              height = 13) 
+print(age_bees)
+dev.off()
+
+```
+
+
+
+
+
+
+
+# Sex
+
+Testing
+
+
+```{r}
+
+da_results_sex <- testNhoods(milo_obj, design = ~ Tissue+ AgeGroup+ gender, 
+                             design.df = milo_design)
+head(da_results_sex)
+```
+
+
+```{r}
+da_results_sex %>%
+  arrange(SpatialFDR) %>%
+  head() 
+```
+Inspecting DA results
+
+```{r}
+ggplot(da_results_sex, aes(PValue)) + geom_histogram(bins=50)
+
+```
+
+```{r}
+ggplot(da_results_sex, aes(logFC, -log10(SpatialFDR))) + 
+  geom_point() +
+  geom_hline(yintercept = 1) ## Mark significance threshold (10% FDR)
+
+```
+
+```{r}
+
+## Plot neighbourhood graph
+nh_graph_pl <- plotNhoodGraphDA(milo_obj, da_results_sex, layout="UMAP",alpha=0.1) 
+  
+sex_umap <- umap_pl + nh_graph_pl +
+  plot_layout(guides="collect")
+sex_umap
+```
+
+
+
+
+```{r}
+                       
+pdf(file = here(milo_save_dir, "Sex_corr_for_tissue_age_microglia.pdf"),   
+              width = 13, 
+              height = 7) 
+print(sex_umap)
+dev.off()
+
+```
+
+
+```{r}
+da_results_sex <- annotateNhoods(milo_obj, da_results_sex, coldata_col = "microglia_clu")
+head(da_results_sex)
+
+```
+
+```{r}
+da_results_sex$microglia_clu <- factor(da_results_sex$microglia_clu, 
+                                      levels = plot_levels)
+ggplot(da_results_sex, aes(microglia_clu_fraction)) + geom_histogram(bins=50)
+```
+
+
+```{r}
+da_results_sex$clust <- ifelse(da_results_sex$microglia_clu_fraction < 0.7, 
+                           "Mixed", 
+                           da_results_sex$microglia_clu_fraction)
+
+sex_beeswarm <- plotDAbeeswarm(da_results_sex, group.by = "microglia_clu")
+sex_beeswarm
+```
+
+
+```{r}
+
+pdf(file = here(milo_dir_bees, "Sex_corr_for_tissue_age_microglia.pdf"),   
+              width = 7, 
+              height = 13) 
+print(sex_beeswarm)
+dev.off()
+```
+
+
+
+# Save data
+
+```{r}
+milo_dir <- here("data", "Milo_datasets")
+dir.create(milo_dir)
+saveRDS(milo_obj, here(milo_dir, "HCA_microglia_milo.RDS"))
+
+da_data_dir <- here("outs", "Milo_compositional_analysis",
+                    "differential_abundance")
+dir.create(da_data_dir)
+
+write.csv(da_results, here(da_data_dir, "da_results_tissue_overall_microglia.csv"))
+write.csv(da_results_age, here(da_data_dir, "da_results_age_microglia.csv"))
+write.csv(da_results_sex, here(da_data_dir, "da_results_sex_microglia.csv"))
+
+```
+
+# Session info
+```{r}
+sessionInfo()
+
+```
+

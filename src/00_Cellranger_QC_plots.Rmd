@@ -1,0 +1,350 @@
+---
+title: "CellrangerQC"
+author: "Luise A. Seeker"
+date: "14/12/2020"
+output: html_document
+---
+
+# Introduction
+
+Nuclei were extracted and single cell RNA seq libraries were generated using the
+10X Genomics version 3 chemistry. Edinburgh Genomics sequenced the libraries 
+and sent us .fastq files which were demultiplexed and aligned with the human 
+reference genome using Cellranger. This is a script characterising the 
+cellranger output to assess its quality. 
+
+
+# Prepare environment and data
+Load libraries 
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(ggsci)
+
+```
+
+
+Load data
+
+```{r}
+
+data <- read.csv("/Users/lseeker/Documents/Work/HumanCellAtlas/SSD/Cellranger_Quality_Stats/CR_Q_Stats.csv")
+
+names(data)
+```
+
+Pick colour pallets
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+```
+
+
+# Summary statistics
+
+Mean number of nuclei captured
+```{r}
+mean(data$Estimated_Number_of_Cells)
+```
+
+
+mean number of reads per cell
+```{r}
+mean(data$Mean_Reads_per_Cell)
+```
+
+
+Mean number of Reads
+```{r}
+
+mean(data$Number_of_Reads)
+```
+
+
+
+
+```{r}
+mean(data$Reads_Mapped_Confidently_to_Intronic_Regions)
+```
+
+```{r}
+mean(data$Reads_Mapped_Confidently_to_Exonic_Regions)
+```
+
+
+```{r}
+mean(data$Reads_Mapped_Confidently_to_Intergenic_Regions)
+```
+
+```{r}
+mean(data$Reads_Mapped_Antisense_to_Gene)
+```
+
+```{r}
+mean(data$Reads_Mapped_Confidently_to_Transcriptome)
+```
+
+
+
+```{r}
+mean(data$Fraction_Reads_in_Cells)
+```
+
+```{r}
+mean(data$Median_Genes_per_Cell)
+```
+
+```{r}
+
+low_umi <- c(27, 8, 43, 63, 5, 2)
+
+data$low_umi <- ifelse(data$ProcessNumber %in% low_umi, "TRUE", "FALSE")
+
+ggplot(data, aes(x = sampleID, 
+                 y = (data$Reads_Mapped_Confidently_to_Exonic_Regions * 100) / 
+                   (data$Reads_Mapped_Confidently_to_Intronic_Regions * 100 +
+                   data$Reads_Mapped_Confidently_to_Exonic_Regions * 100),
+                 fill = low_umi)) +
+  geom_bar(stat="identity") +
+  ylab("Percentage exonic reads") +
+  xlab("Sample ID") +
+  theme_minimal(14) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  scale_fill_manual(values = c(mycoloursP[17], mycoloursP[16])) +
+  geom_hline(
+    yintercept = 0.5,
+    linetype = "dashed", color = "blue", size = 1) +
+  geom_hline(
+    yintercept = 0.7,
+    linetype = "dashed", color = "blue", size = 1) +
+  theme(legend.position = "none")
+  
+
+```
+
+```{r}
+
+exclude <- c(27, 8, 43, 63, 5, 2, 69, 45, 66, 50)
+
+data$sample_qc <- ifelse(data$ProcessNumber %in% exclude, 
+                         "Fail",
+                         "Pass")
+
+ggplot(data, aes(x = sampleID, 
+                 y = (data$Reads_Mapped_Confidently_to_Exonic_Regions * 100) / 
+                   (data$Reads_Mapped_Confidently_to_Intronic_Regions * 100 +
+                   data$Reads_Mapped_Confidently_to_Exonic_Regions * 100),
+                 fill = sample_qc)) +
+  geom_bar(stat="identity") +
+  ylab("Percentage exonic reads")+
+  xlab("Sample ID") +
+  theme_minimal(14) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  scale_fill_manual(values = mycoloursP[5:40]) +
+  geom_hline(
+    yintercept = 0.5,
+    linetype = "dashed", color = "blue", size = 1) +
+  geom_hline(
+    yintercept = 0.7,
+    linetype = "dashed", color = "blue", size = 1) +
+  theme(legend.position = "none")
+  
+
+```
+
+# Bring dataframe to long format
+
+```{r}
+long_data <- gather(data, IntEx, percentage,
+  Reads_Mapped_Confidently_to_Intronic_Regions:Reads_Mapped_Confidently_to_Exonic_Regions,
+  factor_key = TRUE
+)
+
+long_data$spliced_status <- ifelse(long_data$IntEx ==
+  "Reads_Mapped_Confidently_to_Intronic_Regions",
+"intronic", "exonic"
+)
+```
+
+
+#Plots
+
+
+```{r, fig.width = 6, fig.height = 4, fig.fullwidth=TRUE}
+ggplot(data = long_data, aes(
+  x = sampleID, y = percentage * 100,
+  fill = spliced_status
+)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = mycoloursP) +
+  theme_minimal() +
+  ylab("percentage") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
+  geom_hline(
+    yintercept = mean(data$Reads_Mapped_Confidently_to_Intronic_Regions)
+    * 100,
+    linetype = "dashed", color = "blue", size = 1 
+  ) +
+  geom_hline(
+    yintercept = mean(data$Reads_Mapped_Confidently_to_Exonic_Regions)
+    * 100,
+    linetype = "dashed", color = "red", size = 1
+  ) +
+  geom_hline(
+    yintercept = mean(data$Reads_Mapped_Confidently_to_Exonic_Regions +
+      data$Reads_Mapped_Confidently_to_Intronic_Regions)
+    * 100,
+    linetype = "dashed", color = "yellow", size = 1
+  )
+```
+
+
+
+```{r, fig.width = 6, fig.height = 4, fig.fullwidth=TRUE}
+ggplot(data = long_data, aes(x = sampleID, y = percentage, fill = spliced_status)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Proporton") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(yintercept = 0.5, color = "black", size = 1)
+```
+```{r}
+
+data$other <- 1 - (data$Reads_Mapped_Confidently_to_Exonic_Regions +
+  data$Reads_Mapped_Confidently_to_Intronic_Regions)
+
+ggplot(data = data, aes(x = sampleID, y = other)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[6]) +
+  theme_minimal() +
+  ylab("other than intronic or exonic reads") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(yintercept = mean(data$other), color = "red", size = 1)
+```
+
+
+
+```{r}
+ggplot(data = data, aes(x = sampleID, y = Estimated_Number_of_Cells)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Number of nuclei") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(
+    yintercept = mean(data$Estimated_Number_of_Cells), color = "red",
+    size = 1
+  )
+```
+
+
+
+
+
+
+```{r}
+ggplot(data = data, aes(x = sampleID, y = Mean_Reads_per_Cell)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Mean reads per cell") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(yintercept = mean(data$Mean_Reads_per_Cell), color = "red", size = 1)
+```
+
+
+```{r}
+ggplot(data = data, aes(x = sampleID, y = Number_of_Reads)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Mean number of reads") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(yintercept = mean(data$Number_of_Reads), color = "red", size = 1)
+```
+
+
+
+```{r}
+ggplot(data = data, aes(x = sampleID, y = Fraction_Reads_in_Cells)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Fraction reads in cells") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(
+    yintercept = mean(data$Fraction_Reads_in_Cells), color = "red",
+    size = 1
+  )
+```
+
+```{r}
+ggplot(data = data, aes(x = sampleID, y = Median_Genes_per_Cell)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = mycoloursP[4:5]) +
+  theme_minimal() +
+  ylab("Median genes per cell") +
+  xlab("sample ID") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_hline(
+    yintercept = mean(data$Median_Genes_per_Cell), color = "red",
+    size = 1
+  )
+```
+```{r}
+
+sum(data$Estimated_Number_of_Cells)
+```
+
+
+
+# Sumamary
+
+This is a very crude first look at the quality of the samples in our study 
+before applying any quality control. 
+The mean number of nuclei captured for each sample was 1657 with a total number 
+of 94458 nuclei in the complete dataset. 
+On average, 362,345 reads were captured for each nucleus with a median gene 
+count of 749 per nucleus.
+
+A few samples behave differently than others and should be closely observed 
+in the downstream analysis:
+
+SD29/17 CB is very low in intronic reads compared to the others and shows the 
+lowest median gene countand fraction reads in cells. This may indicate that there
+was a lot of ambient mRNA captured for this sample. 
+
+SD31/15 CB and SD11/13 CB show a similar behavior. 
+
+For SD17/13 CB a lot more nuclei were captured while showing low mean reads per 
+nucleus. It might be affected by a similar prolem as we initially encountered
+with the foeatus samples. 
+
+SD 11/18 may be a poor donor. More than 30% of all reads of its three samples
+were neither intronic nor exonic reads. The donor died of a Sepsis, had a PMI of 
+80 hours (which is just below the average) and the RIN values for all three 
+samples are yet unknown, because they are newer samples that were processed this
+year. 
+
+
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,558 @@
+---
+title: "Data_coparative_QC"
+author: "Luise A. Seeker"
+date: "09/06/2022"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(dplyr)
+library(scater)
+library(scran)
+library(ggsci)
+library(scales)
+library(here)
+library(gridExtra)
+library(ggbeeswarm)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+
+seur$dataset <- "Seeker"
+```
+
+```{r}
+jaekel <- readRDS(here("data",
+          "downloaded_datasets",
+          "Jaekel_Agirre_2019",
+          "Nat19_ALLCELLTYPES_v3.rds"))
+
+jaekel$total_percent_mito <- jaekel$percent.mito * 100
+jaekel$dataset <- "Jaekel_Agirre_2019"
+```
+
+```{r}
+
+AD_matrix <- Read10X((here("data",
+                    "downloaded_datasets",
+                    "Mathys_2019",
+                    "notfiltered")), gene.column = 2)
+#the barcodes had a weird '' at the end and we needed to get rid of this
+colnames(AD_matrix) <- gsub("'","",colnames(AD_matrix))
+metadata <- read.table((here("data",
+                    "downloaded_datasets",
+                    "Mathys_2019",
+                    "notfiltered", "metadata.tsv")), header = T, sep = ",")
+#the rownames must be the barcodes
+rownames(metadata) <- metadata$Cells
+
+#and then it worked
+#In this step we do filter for genes and UMI counts but not mt genes - try to make this consistent with how I processed my own data 
+HumanAD <- CreateSeuratObject(counts = AD_matrix, min.cells = 3, min.features  = 200, project = "10X_AD", assay = "RNA", names.field = 1, names.delim = ".", meta.data = metadata)
+dim(HumanAD)
+
+HumanAD$total_percent_mito <- PercentageFeatureSet(HumanAD, pattern = "^MT-")
+
+HumanAD$dataset <- "Mathys_2019"
+# I think this one needs QCed according to the original paper. 
+```
+
+
+```{r}
+nagy <- Matrix::readMM(here("data",
+                    "downloaded_datasets", "Nagy2020",
+                    "GSE144136_GeneBarcodeMatrix_Annotated.mtx"))
+
+cell_names_nagy <- read.csv((here("data",
+                    "downloaded_datasets", "Nagy2020",
+                    "GSE144136_CellNames.csv")))
+
+gene_names_nagy <- read.csv((here("data",
+                    "downloaded_datasets", "Nagy2020",
+                    "GSE144136_GeneNames.csv")))
+
+rownames(nagy) <- gene_names_nagy$x
+
+colnames(nagy) <- cell_names_nagy$x
+
+nagy_seur <- CreateSeuratObject(counts = nagy)
+
+# It appears like mitochondrial genes have been removed from the Nagy et al. dataset
+nagy_seur$total_percent_mito <- PercentageFeatureSet(nagy_seur, pattern = "^MT-")
+
+nagy_seur$dataset <- "Nagy_2020"
+```
+
+# merge datasets
+
+```{r}
+
+
+merged_dat <- merge(x = seur, y = c(jaekel, HumanAD, nagy_seur))
+
+Idents(merged_dat) <- "dataset"
+
+# Visualize QC metrics as a violin plot
+VlnPlot(merged_dat, features = c("nFeature_RNA", 
+                                 "nCount_RNA", 
+                                 "total_percent_mito"), ncol = 3, 
+        pt.size = 0)
+```
+```{r, eval = FALSE}
+dir.create(here("data",
+           "single_nuc_data",
+           "merged_QC_data"))
+
+saveRDS(merged_dat, here("data",
+                    "single_nuc_data",
+                    "merged_QC_data",
+                    "merged_data.RDS"))
+
+```
+
+# Mathys et al did the QC in a complicated way 
+They do not report a cutoff for mitochondrial percentage, but that they 
+retained 75060 nuclei in their dataset, which are 1166 less than are in the
+data provided. I decided to remove the 1166 nuclei with the worst 
+mitochondrial percentage. 
+
+```{r}
+
+met_dat <- HumanAD@meta.data
+
+met_dat <- met_dat %>%
+  arrange_(~ desc(total_percent_mito)) %>%
+  top_n(n = 1166)
+
+
+met_dat[1166, 24]
+
+HumanAD <- subset(HumanAD, subset = total_percent_mito < 37.70651)
+
+```
+
+```{r}
+
+
+merged_dat <- merge(x = seur, y = c(jaekel, HumanAD, nagy_seur))
+
+Idents(merged_dat) <- "dataset"
+
+# Visualize QC metrics as a violin plot
+
+plot1 <- VlnPlot(merged_dat, features = "nFeature_RNA", 
+        pt.size = 0) + scale_fill_manual(values= mycoloursP[25:50])+ 
+  theme_minimal()+NoLegend() + 
+  theme(axis.text.x = element_text(angle = 90)) +xlab("")+ 
+  ggtitle("gene count")
+
+plot2 <- VlnPlot(merged_dat, features = "nCount_RNA", 
+        pt.size = 0) + scale_fill_manual(values= mycoloursP[25:50])+ 
+  theme_minimal()+NoLegend() + 
+  theme(axis.text.x = element_text(angle = 90))+xlab("")+ 
+  ggtitle("UMI count")
+
+plot3 <- VlnPlot(merged_dat, features = "total_percent_mito", 
+        pt.size = 0) + scale_fill_manual(values= mycoloursP[25:50])+ 
+  theme_minimal()+NoLegend() + 
+  theme(axis.text.x = element_text(angle = 90))+xlab("")+ 
+  ggtitle("mitochondrial genes")
+
+
+grid.arrange(plot1, plot2, plot3, ncol = 3)
+
+
+```
+```{r}
+merged_dat$dataset <- factor(merged_dat$dataset, levels = c("Seeker", 
+                                                            "Jaekel_Agirre_2019",
+                                                            "Mathys_2019",
+                                                            "Nagy_2020"))
+
+
+```
+
+# Comparison gene count
+
+## Normality test
+```{r}
+
+#shapiro.test(merged_dat$nFeature_RNA)
+set.seed(0)
+ks.test(merged_dat$nFeature_RNA, 'pnorm')
+
+qqnorm(merged_dat$nFeature_RNA)
+qqline(merged_dat$nFeature_RNA)
+
+
+qqnorm(log(merged_dat$nFeature_RNA))
+qqline(log(merged_dat$nFeature_RNA))
+
+#shapiro.test(log(merged_dat$nFeature_RNA))
+set.seed(0)
+ks.test(log(merged_dat$nFeature_RNA), 'pnorm')
+
+hist(log(merged_dat$nFeature_RNA))
+
+```
+## Linear model
+```{r}
+lin_mod <- lm(log(merged_dat$nFeature_RNA) ~ merged_dat$dataset)
+summary(lin_mod)
+anova(lin_mod)
+```
+
+See if residuals of the model are normally distributed
+```{r}
+hist(residuals(lin_mod))
+set.seed(0)
+ks.test(residuals(lin_mod), 'pnorm')
+qqnorm(residuals(lin_mod))
+qqline(residuals(lin_mod))
+```
+
+
+# Comparison UMI count
+
+```{r}
+
+#shapiro.test(merged_dat$nFeature_RNA)
+set.seed(0)
+ks.test(merged_dat$nCount_RNA, 'pnorm')
+
+qqnorm(merged_dat$nCount_RNA)
+qqline(merged_dat$nCount_RNA)
+
+
+qqnorm(log(merged_dat$nCount_RNA))
+qqline(log(merged_dat$nCount_RNA))
+
+#shapiro.test(log(merged_dat$nFeature_RNA))
+set.seed(0)
+ks.test(log(merged_dat$nCount_RNA), 'pnorm')
+
+hist(log(merged_dat$nCount_RNA))
+
+```
+
+
+
+# Run linear model
+```{r}
+
+lin_mod <- lm(log(merged_dat$nCount_RNA) ~ merged_dat$dataset)
+summary(lin_mod)
+```
+# Comparison mitochondrial gene percentage
+
+```{r}
+
+#shapiro.test(merged_dat$nFeature_RNA)
+set.seed(0)
+ks.test(merged_dat$total_percent_mito, 'pnorm')
+
+qqnorm(merged_dat$total_percent_mito)
+qqline(merged_dat$total_percent_mito)
+
+
+
+#shapiro.test(log(merged_dat$nFeature_RNA))
+set.seed(0)
+ks.test(log(merged_dat$nCount_RNA), 'pnorm')
+
+hist(merged_dat$total_percent_mito)
+
+
+hist(sqrt(merged_dat$total_percent_mito))
+
+```
+
+
+```{r}
+
+lin_mod <- lm(merged_dat$total_percent_mito ~ merged_dat$dataset)
+summary(lin_mod)
+
+
+bin_mod <- glm(merged_dat$total_percent_mito/100 ~ merged_dat$dataset,
+                family = binomial(link="logit"))
+summary(bin_mod)
+
+
+
+```
+
+
+```{r}
+hist(resid(lin_mod))
+
+```
+
+# Comparison of number of nuclei per sample
+```{r}
+seeker <- dplyr::count(merged_dat@meta.data, merged_dat@meta.data$uniq_id) 
+seeker$dataset <- "Seeker"
+seeker_uniq <- seeker[!duplicated(seeker$`merged_dat@meta.data$uniq_id`),]
+jaekel <- dplyr::count(merged_dat@meta.data, merged_dat@meta.data$Sample) 
+jaekel$dataset <- "Jaekel_Agirre_2019"
+jaekel_uniq <- jaekel[!duplicated(jaekel$`merged_dat@meta.data$Sample`),]
+mathys <- dplyr::count(merged_dat@meta.data, merged_dat@meta.data$subject)
+mathys$dataset <- "Mathys_2019"
+mathys_uniq <- mathys[!duplicated(mathys$`merged_dat@meta.data$subject`),]
+
+
+Idents(merged_dat) <-"dataset"
+
+nagy<- subset(merged_dat, idents = "Nagy_2020")
+
+
+
+
+#find out samples for Nagy et al. 
+
+cell_info<- gsub('.{17}$', '', cell_names_nagy$x)
+head(cell_info)
+
+sample_info <- substr(cell_info, 
+                      nchar(cell_info) - 9,
+                      nchar(cell_info))
+
+nagy$sample_info <- sample_info
+
+nagy_sample_count <- dplyr::count(nagy@meta.data, nagy@meta.data$sample_info) 
+nagy_sample_count$dataset <- "Nagy_2020"
+
+nagy_uniq <- nagy_sample_count[!duplicated(nagy_sample_count$`nagy@meta.data$sample_info`),]
+nagy_uniq$dataset <- "Nagy_2020"
+
+names(seeker_uniq)[1] <- "sample_id"
+names(jaekel_uniq)[1] <- "sample_id"
+names(mathys_uniq)[1] <- "sample_id"
+names(nagy_uniq)[1] <- "sample_id"
+
+df <- rbind(seeker_uniq, 
+            jaekel_uniq, 
+            mathys_uniq, 
+            nagy_uniq)
+
+df<- subset(df, df$sample_id != "NA")
+
+
+plot4 <- ggplot(df, aes(x = dataset, y = n, fill = dataset))+ geom_violin() + 
+  scale_fill_manual(values= mycoloursP[25:50])+ theme_minimal() +NoLegend() + 
+  theme(axis.text.x = element_text(angle = 90)) + ylab("") +
+  xlab("") + 
+  ggtitle("nuclei count")
+
+
+grid.arrange(plot1, plot2, plot3, plot4, ncol= 4)
+```
+
+```{r}
+df$dataset <- factor(df$dataset, levels = c("Seeker",
+                                            "Jaekel_Agirre_2019",
+                                            "Mathys_2019",
+                                            "Nagy_2020"))
+
+lin_mod <- lm(log(df$n) ~ df$dataset)
+summary(lin_mod)
+
+
+
+```
+```{r}
+
+shapiro.test(df$n)
+set.seed(0)
+ks.test(df$n, 'pnorm')
+
+qqnorm(df$n)
+qqline(df$n)
+
+
+qqnorm(log(df$n))
+qqline(log(df$n))
+
+shapiro.test(log(df$n))
+set.seed(0)
+ks.test(log(df$n), 'pnorm')
+
+hist(log(df$n))
+
+```
+
+
+```{r, eval = FALSE}
+saveRDS(merged_dat, here("data",
+                    "single_nuc_data",
+                    "merged_QC_data",
+                    "merged_data_mathys_mito_fil.RDS"))
+
+```
+
+
+# Quality metrics in our data
+
+```{r}
+ggplot(seur@meta.data, 
+       aes(x = seur$PMI, y = seur$RINvalue, col = seur$caseNO, 
+           shape = seur$Tissue, size = 2)) + 
+  geom_point() + 
+  scale_colour_manual(values= mycoloursP[25:50]) + 
+  theme_minimal()+ xlab("Post mortem interval")+
+  ylab ("RIN value") + NoLegend()
+
+
+```
+For legends
+```{r}
+ggplot(seur@meta.data, 
+       aes(x = seur$PMI, y = seur$RINvalue, shape = seur$Tissue)) + 
+  geom_point() + 
+  scale_colour_manual(values= mycoloursP[25:50]) + 
+  theme_minimal()+ xlab("Post mortem interval")+
+  ylab ("RIN value") 
+
+
+```
+
+```{r}
+ggplot(seur@meta.data, 
+       aes(x = seur$PMI, y = seur$RINvalue, col = seur$Tissue)) + 
+  geom_point() + 
+  scale_colour_manual(values= mycoloursP[25:50]) + 
+  theme_minimal()+ xlab("Post mortem interval")+
+  ylab ("RIN value") 
+
+
+```
+
+```{r}
+
+met_dat <- seur@meta.data
+
+dat<- aggregate(seur$nCount_RNA, list(seur$PMI), FUN=mean) 
+names(dat) <- c("PMI", "mean_nCount_RNA")
+
+met_dat_pmi <- merge(met_dat, dat, by = "PMI")
+met_dat_pmi$PMI <- as.factor(met_dat_pmi$PMI)
+
+qc_1 <- ggplot(met_dat_pmi, 
+      mapping = aes(x = PMI, 
+           y = nCount_RNA, 
+           col = caseNO)) + 
+  geom_point() + 
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  theme_minimal()+ 
+  xlab("Post mortem interval")+  
+  theme(axis.text.x = element_text(angle = 45))+
+  scale_colour_manual(values= mycoloursP[25:50])+
+  ylab ("Gene count") + NoLegend() 
+  
+qc_1 
+```
+
+```{r}
+qc_2 <- ggplot(seur@meta.data, 
+       aes(x = as.factor(seur$PMI), y = seur$nFeature_RNA, col = seur$caseNO)) + 
+  geom_point()  + theme_minimal()+ xlab("Post mortem interval")+ 
+  theme(axis.text.x = element_text(angle = 45))+
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  scale_colour_manual(values= mycoloursP[25:50])+
+  ylab ("UMI count") + NoLegend()
+
+qc_2
+```
+```{r}
+qc_3 <- ggplot(seur@meta.data, 
+       aes(x = as.factor(seur$PMI), y = seur$total_percent_mito, col = seur$caseNO)) + 
+  geom_point() + theme_minimal()+ xlab("Post mortem interval")+ 
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  theme(axis.text.x = element_text(angle = 45))+
+  scale_colour_manual(values= mycoloursP[25:50])+
+  ylab ("Mitochondrial gene percentage") + NoLegend()
+
+qc_3
+```
+```{r}
+qc_4 <- ggplot(seur@meta.data, 
+       aes(x = seur$RIN, y = seur$nFeature_RNA, col = seur$caseNO)) + 
+  geom_point() + theme_minimal()+ xlab("RIN value")+ 
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  theme(axis.text.x = element_text(angle = 45))+
+  scale_color_manual(values= mycoloursP[25:50])+
+  ylab ("Gene count") + NoLegend()
+
+qc_4
+```
+
+```{r}
+qc_5 <- ggplot(seur@meta.data, 
+       aes(x = seur$RIN, y = seur$nCount_RNA, col = seur$caseNO)) + 
+  geom_point() + theme_minimal()+ xlab("RIN value")+ 
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  theme(axis.text.x = element_text(angle = 45))+
+  scale_color_manual(values= mycoloursP[25:50])+
+  ylab ("UMI count") + NoLegend()
+
+qc_5
+```
+
+
+
+```{r}
+qc_6 <- ggplot(seur@meta.data, 
+       aes(x = seur$RIN, y = seur$total_percent_mito, col = seur$caseNO)) + 
+  geom_point() + theme_minimal()+ xlab("RIN value")+
+  scale_color_manual(values= mycoloursP[25:50])+
+  theme(axis.text.x = element_text(angle = 45))+
+  stat_summary(geom = "point", fun = "mean", colour = "red", size = 4)+
+  ylab ("Mitochondrial gene percentage") + NoLegend()
+
+qc_6
+```
+
+```{r}
+grid.arrange(qc_1, qc_2, qc_3, qc_4, qc_5, qc_6, ncol = 3)
+
+```
+
+```{r}
+merged_dat <- NormalizeData(merged_dat)
+merged_dat <- FindVariableFeatures(merged_dat, 
+                                   selection.method = "vst", nfeatures = 2000)
+all_genes <- rownames(merged_dat)
+merged_dat <- ScaleData(merged_dat, features = all_genes)
+merged_dat <- RunPCA(merged_dat, features = VariableFeatures(object = merged_dat))
+ElbowPlot(merged_dat)
+
+
+merged_dat <- FindNeighbors(merged_dat, dims = 1:10)
+merged_dat <- FindClusters(merged_dat, resolution = 0.5)
+merged_dat <- RunUMAP(merged_dat, dims = 1:10)
+DimPlot(merged_dat, reduction = "umap")
+```
+
+```{r}
+
+sessionInfo()
+```

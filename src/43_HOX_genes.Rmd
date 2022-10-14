@@ -1,0 +1,219 @@
+---
+title: "HOX genes"
+author: "Luise A. Seeker"
+date: "19/10/2021"
+output: html_document
+---
+
+# Load libraries
+```{r}
+
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+
+```
+
+```{r}
+
+nad_ol <- readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+```
+
+```{r}
+hox_genes <- c("HOXA1", 
+               "HOXA2", 
+               "HOXA3", 
+               "HOXA4", 
+               "HOXA5", 
+               "HOXA6", 
+               "HOXA7", 
+               "HOXA9", 
+               "HOXA10", 
+               "HOXA11", 
+               "HOXA13",
+               "HOXB1", 
+               "HOXB2", 
+               "HOXB3", 
+               "HOXB4", 
+               "HOXB5", 
+               "HOXB6", 
+               "HOXB7", 
+               "HOXB8", 
+               "HOXB9", 
+               "HOXB13",
+               "HOXC4", 
+               "HOXC5", 
+               "HOXC6", 
+               "HOXC8", 
+               "HOXC9", 
+               "HOXC10", 
+               "HOXC11", 
+               "HOXC12", 
+               "HOXC13",
+               "HOTAIRM1")
+                                
+
+```
+
+```{r, fig.width = 9, fig.height = 9}
+FeaturePlot(nad_ol, features = c(#"HOXA1", 
+                                "HOXA2", "HOXA3", #"HOXA4", "HOXA5", 
+                                #"HOXA6", 
+                                "HOXA7" #, "HOXA9", "HOXA10", "HOXA11", 
+                                 #"HOXA13"
+                                ), 
+            split.by = "Tissue")
+
+```
+
+
+```{r, fig.width = 9, fig.height = 6}
+FeaturePlot(nad_ol, features = c(#"HOXB1", 
+                                 "HOXB2", 
+                                 "HOXB3" 
+                                 #"HOXB4", 
+                                 #"HOXB5", 
+                                 #"HOXB6", "HOXB7", "HOXB8"#, 
+                                 #"HOXB9", "HOXB13"
+                                ), 
+            split.by = "Tissue")
+
+```
+
+```{r}
+
+VlnPlot(nad_ol, feature = "HOXB3", split.by = "Tissue")
+
+```
+
+
+```{r, fig.width = 9, fig.height = 3}
+FeaturePlot(nad_ol, features = c("HOXC4" #, "HOXC5", "HOXC6", "HOXC8", "HOXC9", 
+                                 #"HOXC10", "HOXC11", "HOXC12", "HOXC13"
+                                ), 
+            split.by = "Tissue")
+
+```
+
+```{r, fig.width = 9, fig.height = 3}
+VlnPlot(nad_ol, features = c("HOXC4" #, "HOXC5", "HOXC6", "HOXC8", "HOXC9", 
+                                 #"HOXC10", "HOXC11", "HOXC12", "HOXC13"
+                                ), 
+            split.by = "Tissue")
+
+```
+
+```{r, fig.width = 9, fig.height = 6}
+FeaturePlot(nad_ol, features = c("HOXD1", "HOXD3" #, #"HOXD4", 
+                                 #"HOXD8" #, "HOXD9", 
+                                 #"HOXD10", "HOXD11", "HOXD12", "HOXD13"
+                                ), 
+            split.by = "Tissue")
+
+```
+
+```{r, fig.width = 9, fig.height = 6}
+VlnPlot(nad_ol, features = c("HOXD1", "HOXD3" #, #"HOXD4", 
+                                 #"HOXD8" #, "HOXD9", 
+                                 #"HOXD10", "HOXD11", "HOXD12", "HOXD13"
+                                ), 
+            split.by = "Tissue",
+        ncol = 1)
+
+```
+
+
+
+```{r, fig.width = 9, fig.height = 3}
+FeaturePlot(nad_ol, features = "HOTAIRM1", split.by = "Tissue")
+
+
+```
+
+
+```{r}
+VlnPlot(nad_ol, features = "HOTAIRM1", split.by = "Tissue")
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, features = hox_genes, split.by = "Tissue", ncol = 1)
+
+
+```
+
+
+
+Find markers for tissues without setting any thresholds to see if HOX genes
+are present in lists
+
+They are not.
+```{r, eval=FALSE}
+Idents(nad_ol) <- "Tissue"
+
+all_mark <- FindAllMarkers(nad_ol, test.use = "MAST")
+
+```
+
+
+# Hox gene expression in astrocytes
+
+```{r}
+astro_srt<- readRDS(here("data",
+                        "single_nuc_data",
+                        "astrocytes",
+                        "HCA_astrocytes.RDS"))
+
+
+```
+
+
+```{r}
+astro_srt$astrocytes_clu <- factor(astro_srt$astrocytes_clu, levels = c("AS_1",
+                                                                        "AS_2",
+                                                                        "AS_3",
+                                                                        "AS_4",
+                                                                        "AS_5",
+                                                                        "AS_6",
+                                                                        "AS_7",
+                                                                        "AS_8",
+                                                                        "AS_9",
+                                                                        "AS_10",
+                                                                        "AS_11",
+                                                                        "AS_12",
+                                                                        "AS_13"))
+
+Idents(astro_srt) <- "astrocytes_clu"
+```
+
+```{r, fig.width = 8, fig.height = 20}
+fil_hox <- subset(hox_genes, hox_genes %in% rownames(astro_srt))
+VlnPlot(astro_srt, features = fil_hox, split.by = "Tissue", ncol = 1)
+
+
+```
+
+
+session info
+
+```{r}
+sessionInfo()
+```

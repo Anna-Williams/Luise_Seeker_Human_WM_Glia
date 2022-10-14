@@ -1,0 +1,3609 @@
+---
+title: "HCA Astrocytes"
+author: "Luise A. Seeker"
+date: "03/09/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+library(future)
+#library(scclusteval)
+library(clustree)
+library(tidyr)
+library(clusterProfiler)
+library(biomaRt)
+library(here)
+library(ReactomePA)
+#library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(enrichplot)
+library(enrichplot)
+library(msigdbr)
+library(fgsea)
+library(tibble)
+library(gridExtra)
+library(EnhancedVolcano)
+
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+```{r}
+e <- 40000 * 1024^2
+options(future.globals.maxSize = e)
+
+```
+
+```{r}
+seur_comb <- readRDS(here("data", 
+                          "single_nuc_data", 
+                          "all_cell_types",
+                          "srt_anno_01.RDS"))
+
+
+
+```
+
+
+```{r}
+DimPlot(seur_comb, cols = mycoloursP, label = TRUE) + NoLegend()
+
+```
+
+
+
+```{r}
+astro_srt <- subset(seur_comb, idents = c("Astrocyte_1",
+                                          "Astrocyte_2",
+                                          "Astrocyte_3",
+                                          "Astrocyte_4"))
+```
+
+
+```{r}
+
+astro_srt <- FindVariableFeatures(astro_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes <- rownames(astro_srt)
+astro_srt <- ScaleData(astro_srt, features= all_genes)
+
+astro_srt <- RunPCA(astro_srt, features = VariableFeatures(object = astro_srt))
+ElbowPlot(astro_srt)
+
+
+
+
+```
+
+
+```{r}
+
+astro_srt <- FindNeighbors(astro_srt, dims = 1:10)
+
+# test different resolutions for clustering
+astro_srt <- FindClusters(astro_srt, resolution = 0.7)
+
+
+# non-linear reduction
+astro_srt <- RunUMAP(astro_srt, dims = 1:10)
+
+DimPlot(astro_srt, cols = mycoloursP[18:40], label = TRUE) + NoLegend()
+```
+
+
+
+
+
+```{r}
+astro_srt <- FindClusters(astro_srt, resolution = c(0.01, 0.04, 0.05, 
+                                              seq(from = 0.1, to = 1.5, by = 0.1)))
+
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern, 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- gtools::mixedsort(res_names) 
+  plot_l <-list()
+  for(i in 1: length(res_names)){
+  pdf(paste0(save_dir, "/",
+               res_names[i], "_umap.pdf"), width=width, height=height)
+  dim_plot <- DimPlot(seur_obj, 
+                          reduction = "umap", 
+                          cols= plot_cols,
+                          group.by = res_names[i],
+                          label = clust_lab,
+                          label.size = label_size) + NoLegend()
+  print(dim_plot)
+  dev.off()
+  print(dim_plot)
+  }
+}
+
+
+save_dir_astro <- here("outs",
+                       "astrocytes",
+                       "cluster_resolutions")
+dir.create(save_dir_astro, recursive = TRUE)
+
+plot_list_func(seur_obj = astro_srt, 
+               col_pattern = "RNA_snn_res.",
+               plot_cols = mycoloursP[18:40],
+               save_dir = save_dir_astro)
+
+```
+
+```{r}
+DimPlot(astro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "Tissue") + NoLegend()
+
+```
+```{r}
+DimPlot(astro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7") + NoLegend()
+
+```
+
+
+```{r}
+DimPlot(astro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "AgeGroup") + NoLegend()
+
+```
+
+```{r}
+DimPlot(astro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "gender") + NoLegend()
+
+```
+
+
+```{r, fig.width = 6, fig.height = 12}
+DimPlot(astro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "caseNO",
+        ncol = 3) + NoLegend()
+
+```
+
+```{r, fig.width = 10, fig.height=20}
+
+pdf(here(save_dir_astro, "astrocytes_clustree.pdf"), 
+    paper="a4", width=8, height=11.5)
+clustree(
+  astro_srt,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+dev.off()
+
+
+clustree(
+  astro_srt,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+```
+
+# Deciding for the a clustering resolution
+
+I looked for variable genes between all markers and pairwise at resolution 
+0.7, filtered the markers and plotted them in a heat map. I did have a look at
+the cluster QC below at that resolution as well which looked fine. 
+```{r}
+Idents(astro_srt) <- "RNA_snn_res.0.7"
+  astro_srt <-  RenameIdents(
+    astro_srt,
+    "0" = "AS_1",
+    "1" = "AS_2",
+    "2" = "AS_5",
+    "3" = "AS_3",
+    "4" = "AS_4",
+    "5" = "AS_7",
+    "6" = "AS_6",
+    "7" = "AS_8",
+    "8" = "AS_9",
+    "9" = "AS_10",
+    "10" = "AS_11",
+    "11" = "AS_12"
+    
+  )
+# Plot result
+DimPlot(astro_srt,label = TRUE, repel=TRUE)
+
+DimPlot(astro_srt,label = TRUE, repel=TRUE, cols = mycoloursP[35:50],
+                  label.size = 4.5)+ NoLegend()
+
+# Save result
+astro_srt$astrocytes_clu <- Idents(astro_srt)
+
+```
+
+```{r}
+DimPlot(astro_srt,label = TRUE, 
+        repel=TRUE, 
+        cols = mycoloursP[35:50],
+        split.by = "Tissue",
+        label.size = 4.5)+ NoLegend()
+
+
+```
+
+
+```{r}
+DimPlot(astro_srt,label = FALSE, repel=TRUE, cols = mycoloursP[35:50],
+                  label.size = 4.5)+ NoLegend()
+
+```
+
+Find markers for all interesting resolutions
+```{r}
+int_res_all_mark <- function(seur_obj, 
+                             int_cols,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.6,
+                             avg_log = 1.2,
+                             save_dir = getwd(),
+                             test_use = "MAST"
+                             ){
+  for(i in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[i]
+    all_mark <- FindAllMarkers(seur_obj, 
+                               only.pos = only_pos, 
+                               min.pct = min_pct, 
+                               logfc.threshold = logfc_threshold,
+                               test.use = test_use)
+    fil_mark<- subset(all_mark, 
+                      all_mark$pct.1 > fil_pct_1 & 
+                        all_mark$pct.2 < fil_pct_2 )
+    
+    write.csv(all_mark, paste(save_dir, "/all_mark", int_cols[i], ".csv", sep = "" ))
+    write.csv(fil_mark, paste(save_dir, "/fil_mark", int_cols[i], ".csv", sep = "" ))
+    
+  }
+}
+
+```
+
+
+```{r}
+
+save_dir_astro <- here("outs",
+                       "astrocytes",
+                       "cluster_marker_lists")
+```
+
+
+```{r, eval = FALSE}
+
+
+dir.create(save_dir_astro, recursive = TRUE)
+
+
+
+int_res_all_mark(astro_srt, 
+                 int_cols = c("RNA_snn_res.0.01",
+                              "RNA_snn_res.0.04",
+                              "RNA_snn_res.0.05",
+                              "RNA_snn_res.0.1",
+                              "RNA_snn_res.0.2",
+                              "RNA_snn_res.0.3",
+                              "RNA_snn_res.0.4",
+                              "RNA_snn_res.0.7",
+                              "RNA_snn_res.0.8",
+                              "astrocytes_clu"),
+                 save_dir = save_dir_astro)
+
+
+int_res_all_mark(astro_srt, 
+                 int_cols = c("astrocytes_clu"),
+                 save_dir = save_dir_astro)
+
+
+```
+
+# Pairwise cluster comparison for markers
+
+```{r, eval = FALSE}
+
+
+Idents(astro_srt) <- "astrocytes_clu"
+
+clust_id_list_2 <- list(list("Astrocytes_1", "Astrocytes_2"), list("Astrocytes_2", "Astrocytes_1"), 
+                      list("Astrocytes_1", "Astrocytes_3"), list("Astrocytes_3", "Astrocytes_1"),
+                      list("Astrocytes_2", "Astrocytes_12"), list("Astrocytes_12", "Astrocytes_2"), 
+                      list("Astrocytes_2", "Astrocytes_11"), list("Astrocytes_11", "Astrocytes_2"),
+                      list("Astrocytes_11", "Astrocytes_12"), list("Astrocytes_12", "Astrocytes_11"), 
+                      list("Astrocytes_2", "Astrocytes_3"), list("Astrocytes_3", "Astrocytes_2"),
+                      list("Astrocytes_9", "Astrocytes_3"), list("Astrocytes_3", "Astrocytes_9"),
+                      list("Astrocytes_4", "Astrocytes_3"), list("Astrocytes_3", "Astrocytes_4"),
+                      list("Astrocytes_5", "Astrocytes_6"), list("Astrocytes_6", "Astrocytes_5"),
+                      list("Astrocytes_4", "Astrocytes_5"), list("Astrocytes_5", "Astrocytes_4"),
+                      list("Astrocytes_4", "Astrocytes_2"), list("Astrocytes_2", "Astrocytes_4"),
+                      list("Astrocytes_1", "Astrocytes_7"), list("Astrocytes_7", "Astrocytes_1"),
+                      list("Astrocytes_12", "Astrocytes_7"), list("Astrocytes_7", "Astrocytes_12"),
+                      list("Astrocytes_10", "Astrocytes_11"), list("Astrocytes_11", "Astrocytes_10"),
+                      list("Astrocytes_12", "Astrocytes_10"), list("Astrocytes_10", "Astrocytes_12"),
+                      list("Astrocytes_7", "Astrocytes_8"), list("Astrocytes_8", "Astrocytes_7"),
+                      list("Astrocytes_10", "Astrocytes_8"), list("Astrocytes_8", "Astrocytes_10"))
+
+```
+
+
+```{r, eval = FALSE}
+Idents(astro_srt) <- "RNA_snn_res.0.7"
+clust_id_list_2 <- list(list("0", "1"), list("1", "0"), 
+                      list("1", "3"), list("3", "1"),
+                      list("1", "10"), list("10", "1"), 
+                      list("10", "11"), list("11", "10"),
+                      list("10", "9"), list("9", "10"), 
+                      list("4", "3"), list("3", "4"),
+                      list("3", "8"), list("8", "3"),
+                      list("4", "2"), list("2", "4"),
+                      list("2", "6"), list("6", "2"),
+                      list("0", "11"), list("11", "0"),
+                      list("0", "5"), list("5", "0"),
+                      list("5", "7"), list("7", "5"),
+                      list("5", "4"), list("4", "5"),
+                      list("11", "1"), list("1", "11"),
+                      list("11", "5"), list("5", "11"),
+                      list("9", "2"), list("2", "9"))
+
+```
+
+
+```{r}
+
+pairwise_mark <- function(seur_obj, 
+                             int_cols,
+                             clust_id_list,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.1,
+                             save_dir = getwd(),
+                             test_use = "MAST"){
+  for(k in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[k]
+    for(i in 1: length(clust_id_list)){
+      clust_mark <- FindMarkers(seur_obj, 
+                                ident.1 = clust_id_list[[i]][[1]], 
+                                ident.2 = clust_id_list[[i]][[2]],
+                                min.pct = min_pct, 
+                                test.use = test_use)
+      clust_mark$cluster <- clust_id_list[[i]][[1]]
+      clust_mark$comp_to_clust <- clust_id_list[[i]][[2]]
+      write.csv(clust_mark, 
+                paste(save_dir, 
+                      "/", 
+                      int_cols[k],
+                      "_",
+                      clust_id_list[[i]][[1]],
+                      "_",
+                      clust_id_list[[i]][[2]],
+                      ".csv", sep = "" ))
+    }
+  }
+}
+
+
+save_dir_astro_pw <- here("outs",
+                       "astrocytes",
+                       "pairwise_cluster_marker_lists")
+
+
+
+```
+
+```{r, eval = FALSE}
+
+dir.create(save_dir_astro_pw, recursive = TRUE)
+
+
+pairwise_mark(astro_srt, 
+              int_cols = "astrocytes_clu",
+              save_dir = save_dir_astro_pw,
+              clust_id_list = clust_id_list_2)
+
+```
+
+Read in data for plotting differentially expressed genes
+```{r}
+
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv")
+  myfiles = lapply(paste(file_dir, temp, sep = "/"), read.csv)
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                       dat$pct.1 > pct_1 & 
+                       dat$pct.2 < pct_2)
+    if(pairwise == TRUE){
+      
+      top10 <- av_log_fil %>% top_n(10, avg_log2FC)
+      top10$gene <- top10$X
+    }else{
+    av_log_fil$cluster <- as.character(av_log_fil$cluster)
+    top10 <- av_log_fil %>% group_by(cluster) %>% 
+      top_n(10, avg_log2FC)
+    }
+    
+    if(i ==1){
+      fil_genes <- top10
+    }else{
+      fil_genes <- rbind(fil_genes, top10)
+    }
+    
+    fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+    
+  }
+  
+  return(fil_genes)
+}
+
+
+fil_genes <- gen_mark_list(file_dir = save_dir_astro)
+
+fil_genes_pw <- gen_mark_list(file_dir = save_dir_astro_pw,
+                              pairwise = TRUE)
+
+int_genes <- c(fil_genes$gene, fil_genes_pw$gene)
+int_genes <- unique(int_genes)
+
+
+
+
+```
+
+```{r, fig.height = 25, fig.width=10}
+# every cell name
+
+
+
+Idents(astro_srt) <- "astrocytes_clu"
+
+cluster_averages <- AverageExpression(astro_srt, 
+                                      group.by = "astrocytes_clu",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$cluster <- levels(as.factor(astro_srt@meta.data$astrocytes_clu))
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F)
+
+hm_av
+```
+
+```{r, fig.height = 25, fig.width=10}
+
+Idents(astro_srt) <- "cluster_id"
+
+cluster_averages <- AverageExpression(astro_srt, 
+                                      group.by = "cluster_id",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$cluster <- levels(as.factor(astro_srt@meta.data$cluster_id))
+
+cluster_averages@meta.data$cluster <- factor(cluster_averages@meta.data$cluster, 
+                                             levels = levels(as.factor(astro_srt$cluster_id)))
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[35:50],
+          draw.lines = F)
+
+hm_av
+
+png(here("outs", "astrocytes", "cluster_heatmap", "AS_9_ep_col.png"), width=600, height=2300)
+print(hm_av)
+dev.off()
+
+```
+
+
+# Plot cluster markers
+
+## Cluster 0 markers/ Atrocyte_1 
+```{r, fig.width=12, fig.height=20}
+FeaturePlot(astro_srt, features = c(
+  "LUZP2",
+  "MDGA2",
+  "RGS6",
+  "LAMA2",
+  "SHISA6",
+  "PDZRN4",
+  "CACNB2",
+  "SLC6A11",
+  "PTPRT",
+  "KCND2",
+  "PPFIA2",
+  "SLC8A1",
+  "FAT3",
+  "EDNRB",
+  "KCNJ16",
+  "PAMR1",
+  "LGR6",
+  "RORA",
+  "PDE4D"
+),ncol = 3)
+
+```
+
+I think most interesting as cluster 0 markers are MDGA2, RGS6, CACNB2 and 
+SLC6A11. 
+```{r}
+FeaturePlot(seur_comb, features = c(
+     "MDGA2",
+     "RGS6",
+     "CACNB2",
+     "SLC6A11"),
+     ncol = 2)
+
+```
+
+RGS6 and SLC6A11 seem to be more astroyte specific than the other markers. 
+
+A combination of SLC6A11 and MDGA2 may describe cluster 0 best for 
+validation, because 5 and 7 are positive for one but not both of these markers.
+But MDGA2 is also expressed by other cell types.
+
+https://www.abcam.com/mdga2-antibody-ab121164.html
+
+SCC6A11 is coding for a sodium depending GABA transporter (GAS2) which 
+ends inhibitory signals by removing GABA from the synaptic gap. 
+However, the abcam SLC6A11 antibody does not look too great:
+https://www.abcam.com/gaba-transporter-3--gat-3-antibody-ab181783.html and is 
+not tested for IF. 
+
+
+CACNB2
+https://www.abcam.com/cacnb2-antibody-n8b1-ab93606.html
+
+basescope probes for RGS6 and/or SLC6A11 may be an option.
+
+
+## Cluster 1/ Astrocyte_2
+
+```{r, fig.height = 12, fig.width = 12}
+FeaturePlot(astro_srt,
+            features =c(
+              "NRXN3",
+              "AQP1",
+              "BHLHE40",
+              "HSPB1",
+              "CCDC85A",
+              "APLNR",
+              "TTN",
+              "PLEKHA5",
+              "RNF19A",
+              "AEBP1",
+              "CDC42EP4",
+              "ROBO2"
+            ),
+            ncol = 3)
+
+```
+
+
+```{r, fig.height = 12, fig.width = 12}
+FeaturePlot(seur_comb,
+            features =c(
+              "NRXN3",
+              "AQP1",
+              "BHLHE40",
+              "HSPB1",
+              "CCDC85A",
+              "APLNR",
+              "TTN",
+              "PLEKHA5",
+              "RNF19A",
+              "AEBP1",
+              "CDC42EP4",
+              "ROBO2"
+            ),
+            ncol = 3)
+
+```
+
+
+## CLuster 2/ Astroyte_5
+
+
+
+```{r, fig.width = 12, fig.height = 10}
+FeaturePlot(astro_srt,
+            features =c(
+              "ADGRV1",
+              "LINC00609",
+              "EMID1",
+              "L3MBTL4",
+              "CTSH",
+              "DSCAML1",
+              "RHPN1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 12, fig.height = 10}
+FeaturePlot(seur_comb,
+            features =c(
+              "ADGRV1",
+              "LINC00609",
+              "EMID1",
+              "L3MBTL4",
+              "CTSH",
+              "DSCAML1",
+              "RHPN1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+## cluster 6/ Astrocyte_6
+
+cluster 6 next, because it is similar to cluster 2 and the two may need to be 
+merged. 
+
+
+```{r, fig.width = 12, fig.height = 15}
+FeaturePlot(astro_srt,
+            features =c(
+              "AL589740.1",
+              "EPHA6",
+              "AC073050.1",
+              "EPHB1",
+              "VAV3",
+              "ZNF98",
+              "GRM3",
+              "GABRA2",
+              "LINC00499",
+              "MAP1B",
+              "PTN",
+              "SYNE1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 12, fig.height = 15}
+FeaturePlot(seur_comb,
+            features =c(
+              "AL589740.1",
+              "EPHA6",
+              "AC073050.1",
+              "EPHB1",
+              "VAV3",
+              "ZNF98",
+              "GRM3",
+              "GABRA2",
+              "LINC00499",
+              "MAP1B",
+              "PTN",
+              "SYNE1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+## Cluster 3/ Astrocyte_3
+
+```{r, fig.width = 12, fig.height = 10}
+FeaturePlot(astro_srt,
+            features =c(
+              "BHLHE40",
+              "LINC01094",
+              "PRKAG2",
+              "NR4A1",
+              "RNF220",
+              "SORCS3",
+              "CNTN1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 12, fig.height = 10}
+FeaturePlot(seur_comb,
+            features =c(
+              "BHLHE40",
+              "LINC01094",
+              "PRKAG2",
+              "NR4A1",
+              "RNF220",
+              "SORCS3",
+              "CNTN1"
+            ),
+            ncol = 3)
+
+
+
+```
+
+## Cluster 4/ Astrocyte_4
+```{r, fig.width = 12, fig.height = 20}
+FeaturePlot(astro_srt,
+            features =c(
+              "LUZP2",
+              "GRID2",
+              "PDZRN4",
+              "HSPB1",
+              "ITPRID2",
+              "GRM5",
+              "GREB1L",
+              "PAX3",
+              "FLRT2",
+              "CACNA2D3",
+              "TTN",
+              "HS6ST3",
+              "ADRA1A",
+              "SMOC1",
+              "ATP10B",
+              "KIAA1217",
+              "SEPT4",
+              "NTNG2"
+            ),
+            ncol = 3)
+
+
+
+```
+
+
+
+```{r, fig.width = 12, fig.height = 20}
+FeaturePlot(seur_comb,
+            features =c(
+              "LUZP2",
+              "GRID2",
+              "PDZRN4",
+              "HSPB1",
+              "ITPRID2",
+              "GRM5",
+              "GREB1L",
+              "PAX3",
+              "FLRT2",
+              "CACNA2D3",
+              "TTN",
+              "HS6ST3",
+              "ADRA1A",
+              "SMOC1",
+              "ATP10B",
+              "KIAA1217",
+              "SEPT4",
+              "NTNG2"
+            ),
+            ncol = 3)
+
+
+
+```
+
+
+## Cluster 5/ Astrocyte_7
+
+
+```{r, fig.width = 12, fig.height = 27}
+FeaturePlot(astro_srt,
+            features =c(
+              "GRID2",
+              "ITPRID1",
+              "PAK3",
+              "GRM5",
+              "CACNB2",
+              "VAV3",
+              "SLC6A11",
+              "PTPRT",
+              "KCND2",
+              "GUCY1A2",
+              "UNC5D",
+              "GREB1L",
+              "FAT3",
+              "FLRT2",
+              "LRRC4C",
+              "EDNRB",
+              "KCNJ16",
+              "LGR6",
+              "SHISA9",
+              "PDE7B",
+              "RORA",
+              "AC090809.1",
+              "SOX5",
+              "KCTD8",
+              "LHFPL6",
+              "SEMA3E"), ncol = 3)
+
+
+
+```
+
+
+```{r, fig.width = 12, fig.height = 27}
+FeaturePlot(seur_comb,
+            features =c(
+              "GRID2",
+              "ITPRID1",
+              "PAK3",
+              "GRM5",
+              "CACNB2",
+              "VAV3",
+              "SLC6A11",
+              "PTPRT",
+              "KCND2",
+              "GUCY1A2",
+              "UNC5D",
+              "GREB1L",
+              "FAT3",
+              "FLRT2",
+              "LRRC4C",
+              "EDNRB",
+              "KCNJ16",
+              "LGR6",
+              "SHISA9",
+              "PDE7B",
+              "RORA",
+              "AC090809.1",
+              "SOX5",
+              "KCTD8",
+              "LHFPL6",
+              "SEMA3E"), ncol = 3)
+
+
+
+```
+
+
+## Cluster 7/ Astrocyte_8
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(astro_srt,
+            features =c(
+              "CTNNA3",
+              "PLP1",
+              "MBP",
+              "LINC00609",
+              "EDIL3",
+              "ST18",
+              "SLC24A2",
+              "IL1RAPL1",
+              "DSCAML1",
+              "ATP10B",
+              "GRM3",
+              "ELMO1",
+              "ANK3",
+              "PEX5L",
+              "UNC5C",
+              "NKAIN2",
+              "CNP",
+              "GALNT13",
+              "KCTD8",
+              "FRMD5"), ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(seur_comb,
+            features =c(
+              "CTNNA3",
+              "PLP1",
+              "MBP",
+              "LINC00609",
+              "EDIL3",
+              "ST18",
+              "SLC24A2",
+              "IL1RAPL1",
+              "DSCAML1",
+              "ATP10B",
+              "GRM3",
+              "ELMO1",
+              "ANK3",
+              "PEX5L",
+              "UNC5C",
+              "NKAIN2",
+              "CNP",
+              "GALNT13",
+              "KCTD8",
+              "FRMD5"), ncol = 3)
+
+
+
+```
+
+## Cluster 8/ Astrocyte_9
+
+```{r, fig.width = 12, fig.height = 15}
+
+FeaturePlot(astro_srt,
+            features =c(
+              "PDE10A",
+              "CFAP43",
+              "SPAG17",
+              "DNAH9",
+              "DNAH11",
+              "CFAP54",
+              "LINC02055",
+              "DNAH12",
+              "AC019330.1",
+              "C8orf34",
+              "DNAH6",
+              "SYNE1",
+              "AGBL1"), ncol = 3)
+
+
+
+```
+
+
+```{r, fig.width = 12, fig.height = 15}
+
+FeaturePlot(seur_comb,
+            features =c(
+              "PDE10A",
+              "CFAP43",
+              "SPAG17",
+              "DNAH9",
+              "DNAH11",
+              "CFAP54",
+              "LINC02055",
+              "DNAH12",
+              "AC019330.1",
+              "C8orf34",
+              "DNAH6",
+              "SYNE1",
+              "AGBL1"), ncol = 3)
+
+
+
+```
+
+## Cluster 9/ Astrocyte_10
+
+```{r, fig.width = 12, fig.height = 15}
+
+FeaturePlot(astro_srt,
+            features =c(
+              "SPOCK1",
+              "SPSB1",
+              "SAMD4A",
+              "CLIP1",
+              "MYO1E",
+              "CHI3L1",
+              "UBASH3B",
+              "MAPKAP1",
+              "CADPS",
+              "PDE10A",
+              "AKAP6"), ncol = 3)
+
+
+
+```
+
+
+```{r, fig.width = 12, fig.height = 15}
+
+FeaturePlot(seur_comb,
+            features =c(
+              "SPOCK1",
+              "SPSB1",
+              "SAMD4A",
+              "CLIP1",
+              "MYO1E",
+              "CHI3L1",
+              "UBASH3B",
+              "MAPKAP1",
+              "CADPS",
+              "PDE10A",
+              "AKAP6"), ncol = 3)
+
+
+
+```
+
+
+## Cluster 10/ Astrocyte_11
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(astro_srt,
+            features =c(
+              "PLP1",
+              "TMSB4X",
+              "MBP",
+              "EDIL3",
+              "MOBP",
+              "PAQR6",
+              "MTURN",
+              "SEPT4",
+              "S100B",
+              "FTL",
+              "FTH1",
+              "TP53INP2",
+              "ATP1B1",
+              "RPL37A",
+              "CRYAB",
+              "CNP",
+              "PLEKHB1",
+              "MAP1B",
+              "GLUL"), ncol = 3)
+
+
+
+```
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(seur_comb,
+            features =c(
+              "PLP1",
+              "TMSB4X",
+              "MBP",
+              "EDIL3",
+              "MOBP",
+              "PAQR6",
+              "MTURN",
+              "SEPT4",
+              "S100B",
+              "FTL",
+              "FTH1",
+              "TP53INP2",
+              "ATP1B1",
+              "RPL37A",
+              "CRYAB",
+              "CNP",
+              "PLEKHB1",
+              "MAP1B",
+              "GLUL"), ncol = 3)
+
+
+
+```
+
+
+## Cluster 11/ Astrocyte_12
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(astro_srt,
+            features =c(
+              "SLC8A1",
+              "GRIA1",
+              "LRRTM4",
+              "ARHGAP24",
+              "STMN2",
+              "SNAP25",
+              "YWHAG",
+              "ATP1B1",
+              "GNAS",
+              "CALM1",
+              "UCHL1",
+              "NEFM",
+              "NEFL",
+              "SYT1",
+              "HSP90AA1",
+              "DSCAM"), ncol = 3)
+
+
+
+```
+
+
+
+```{r, fig.width = 12, fig.height = 20}
+
+FeaturePlot(seur_comb,
+            features =c(
+              "SLC8A1",
+              "GRIA1",
+              "LRRTM4",
+              "ARHGAP24",
+              "STMN2",
+              "SNAP25",
+              "YWHAG",
+              "ATP1B1",
+              "GNAS",
+              "CALM1",
+              "UCHL1",
+              "NEFM",
+              "NEFL",
+              "SYT1",
+              "HSP90AA1",
+              "DSCAM"), ncol = 3)
+
+
+
+```
+
+
+# Cluster markers together
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("CCDC85A", "ADGRV1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("GRM3", "GRM5"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("GRM3", "LINC00609"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("CCDC85A", "SLC6A11"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("RNF220", "PAK3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("SPAG17", "PLP1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("NEFL", "SPSB1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("SPSB1", "ATP1B1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("PAX3", "NRXN3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("SPAG17", "NRXN3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("PAX3", "PLP1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(astro_srt, features = c("FAT3", "ADGRV1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+# Find tissue markers
+```{r}
+Idents(astro_srt) <- "Tissue"
+
+tissue_dir <- here("outs",
+                   "astrocytes",
+                   "tissue_marker_list_astro")
+
+
+```
+
+
+```{r, eval = FALSE}
+
+
+tissue_markers <- FindAllMarkers(astro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+dir.create(tissue_dir)
+write.csv(tissue_markers, here(tissue_dir, 
+                               "astro_tissue_marker.csv"))
+```
+
+
+```{r}
+tissue_markers <- read.csv(here(tissue_dir, 
+                               "astro_tissue_marker.csv"))
+
+tissue_markers
+
+
+
+```
+
+
+```{r, fig.width = 12, fig.height = 50}
+FeaturePlot(astro_srt, features = c("ADGRV1", 
+                                    "LINC00609",
+                                    "TMEM132B",
+                                    "AL589740.1",
+                                    "EMID1",
+                                    "EFNA5",
+                                    "L3MBTL4",
+                                    "EPHA6",
+                                    "EPHB1",
+                                    "AC073050.1",
+                                    "AL162511.1",
+                                    "BCAN",
+                                    "ITPRID1",
+                                    "GREB1L",
+                                    "GRID2",
+                                    "GRIA1",
+                                    "GRM5",
+                                    "PAK3",
+                                    "PAX3"),
+            split.by = "Tissue")
+
+
+```
+
+```{r}
+sig_tissue <- subset(tissue_markers, tissue_markers$p_val_adj < 0.05)
+
+top_tissue <- sig_tissue %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+DotPlot(astro_srt, features = unique(top_tissue$gene), group.by = "Tissue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+# Find age  markers
+```{r}
+Idents(astro_srt) <- "AgeGroup"
+
+age_dir <- here("outs",
+                   "astrocytes",
+                   "age_marker_list_astro")
+```
+
+
+```{r, eval = FALSE}
+
+age_markers <- FindAllMarkers(astro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+
+
+dir.create(age_dir)
+write.csv(age_markers, here(age_dir, 
+                               "astro_age_marker.csv"))
+
+
+
+```
+
+
+```{r}
+age_markers <- read.csv(here(age_dir, "astro_age_marker.csv"))
+
+age_markers
+
+
+```
+
+
+```{r}
+sig_age <- subset(age_markers, age_markers$p_val_adj < 0.05)
+
+top_age <- sig_age %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+DotPlot(astro_srt, features = unique(top_age$gene), group.by = "AgeGroup") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+## More in old:
+
+```{r, fig.width = 12, fig.height = 18}
+FeaturePlot(astro_srt, features = c("GREB1L",
+                                    "FAT3",
+                                    "RALYL",
+                                    "KCND2"), 
+            split.by = "AgeGroup")
+
+```
+
+## More in young:
+
+```{r, fig.width = 12, fig.height = 18}
+FeaturePlot(astro_srt, features = c("ADGRV1",
+                                    "BCAN",
+                                    "RHPN1",
+                                    "TTN"), split.by = "AgeGroup")
+
+```
+
+
+
+
+# Find sex markers
+```{r}
+Idents(astro_srt) <- "gender"
+
+sex_dir <- here("outs",
+                   "astrocytes",
+                   "sex_marker_list_astro")
+
+```
+
+
+```{r, eval = FALSE}
+sex_markers <- FindAllMarkers(astro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+sex_markers
+
+dir.create(sex_dir)
+
+write.csv(sex_markers, here(sex_dir,  "astro_sex_marker.csv"))
+
+```
+
+```{r}
+
+sex_markers <- read.csv(here(sex_dir,  "astro_sex_marker.csv"))
+sex_markers
+```
+```{r}
+sig_sex <- subset(sex_markers, sex_markers$p_val_adj < 0.05)
+
+top_sex <- sig_sex %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+DotPlot(astro_srt, features = unique(top_sex$gene), group.by = "gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+```{r}
+
+p1 <- DotPlot(astro_srt, features = unique(top_tissue$gene), group.by = "Tissue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+p2 <- DotPlot(astro_srt, features = unique(top_age$gene), group.by = "AgeGroup") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+
+p3 <- DotPlot(astro_srt, features = unique(top_sex$gene), group.by = "gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+```{r, fig.width = 8, fig.height = 10}
+grid.arrange(p1, p2, p3)
+```
+
+
+
+## More in women
+
+```{r, fig.width = 12, fig.height = 36}
+FeaturePlot(astro_srt, features = c("XIST",
+                                    "LAMA2",
+                                    "ADAMTS9-AS2",
+                                    "SAMD4A",
+                                    "RGS6",
+                                    "CLIP1",
+                                    "AL139260.1",
+                                    "AKAP6",
+                                    "TPST1",
+                                    "SPOCK1",
+                                    "MYO1E"
+                                    ), 
+            split.by = "gender")
+# first encoded by inactivated X-chromosome
+```
+
+
+## More in men
+
+```{r, fig.width = 12, fig.height = 30}
+FeaturePlot(astro_srt, features = c("UTY",
+                                    "TTTY14",
+                                    "ID2",
+                                    "CPAMD8", 
+                                    "UBC",
+                                    "RHPN1",
+                                    "HSPB1",
+                                    "HES1",
+                                    "BHLHE40"
+                                    ), 
+            split.by = "gender")
+# first 2 are encoded on Y-chromosome
+```
+
+# Find age*sex  markers
+```{r}
+Idents(astro_srt) <- "ageSex"
+
+age_sex_dir <- here("outs",
+                   "astrocytes",
+                   "age_sex_marker_list_astro")
+
+```
+
+
+```{r, eval = FALSE}
+
+age_sex_markers <- FindAllMarkers(astro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+
+
+dir.create(age_sex_dir)
+write.csv(age_sex_markers, here(age_sex_dir, 
+                               "astro_age_sex_marker.csv"))
+
+
+
+```
+
+
+```{r}
+age_sex_markers <- read.csv(here(age_sex_dir, 
+                               "astro_age_sex_marker.csv"))
+
+age_sex_markers
+
+
+```
+
+
+```{r}
+
+
+sig_age_sex <- subset(age_sex_markers, age_sex_markers$p_val_adj < 0.05)
+
+top_age_sex <- sig_age_sex %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+top_age_sex <- top_age_sex %>% arrange(factor(top_age_sex$cluster, levels = c("Old men",
+                                                              "Old women",
+                                                              "Young men",
+                                                              "Young women")))
+  
+  
+  
+
+DotPlot(astro_srt, features = unique(top_age_sex$gene), group.by = "ageSex") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+# Cluster QC based on resolution 0.7
+
+# Cluster QC
+
+#### Individuals per cluster
+How many individuals contribute to each cluster?
+
+```{r indiv-per-cluster}
+# count how many cells there are in each group and cluster
+sum_caseNO_cluster <- table(astro_srt$astrocytes_clu, astro_srt$caseNO)
+# For each cluster (on the rows) sum of individuals that do have cells on that cluster
+rowSums(sum_caseNO_cluster > 0)
+```
+Nothing stands out except for maybe cluster 9 (but tissues need to be considered
+as well)
+
+#### Percentage of cells that come from each individual
+
+Some of the clusters might be mainly from one person, even though other subjects
+do have some cells that cluster with it. To address this question we calculate
+for each cluster the proportion of cells that come from each caseNO.
+
+```{r prop-per-cluster}
+
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNO_table <- prop.table(sum_caseNO_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNO <- as.data.frame(prop_caseNO_table)
+colnames(prop_caseNO) <- c("cluster", "caseNO", "proportion")
+```
+
+Flag the clusters where one of the individuals covers more than 40% of the
+cluster. The expected would be around `1/20= 5%`
+
+```{r}
+prop_caseNO[prop_caseNO$proportion > 0.4, ]
+```
+
+
+#### Minimum threshold of 2% contribution to count individuals
+Another interesting variable is the number of individuals that contribute to
+more than a certain threshold (15%) to each cluster
+
+```{r min-pct}
+# Calculuate for each cluster the number of individuals that fulfill the condition of contributing more than a 15%
+num_individuals_gt_30pt <- rowSums(prop_caseNO_table > 0.30)
+# Sort the clusters by ascending order of number of individuals that contribute more than 2%
+sort(num_individuals_gt_30pt)
+#And a general overview of the data
+summary(num_individuals_gt_30pt)
+# Save the ones that are formed by less than 8 individuals that fulfill the condition
+clusters_fail <- rownames(prop_caseNO_table)[which(num_individuals_gt_30pt < 8)]
+
+clusters_fail
+```
+
+
+
+Plot the proportions for caseNo
+
+```{r prop-plot}
+# plot a barplot
+
+
+ggplot(data = prop_caseNO, aes(x = cluster, y = proportion, fill = caseNO)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[1:20]) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+It is also worth keeping in mind the size of the cluster, there are in ascending
+order (0 is the biggest cluster and 10 the smallest).
+
+#### Samples instead of individuals
+
+The proportions are again calculated but taking into consideration the samples 
+instead of the individuals
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_caseNOtissue_cluster <- table(astro_srt$astrocytes_clu, astro_srt$process_number)
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNOtissue_table <- prop.table(sum_caseNOtissue_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNOtissue <- as.data.frame(prop_caseNOtissue_table)
+colnames(prop_caseNOtissue) <- c("cluster", "process_number", "proportion")
+prop_caseNOtissue[prop_caseNOtissue$proportion > 0.3, ]
+```
+## Conclusion of cluster QC
+
+
+
+
+
+# Compositional differences with age, sex and regions 
+
+Some general distributions about the data. We started with equal number of
+sex/age/tissues but because we deleted samples these are not equal any more.
+Also the number of cells from each one might differ
+
+```{r general}
+# Number of samples per ageSex
+colSums(table(astro_srt$process_number, astro_srt$ageSex)>0)
+# Number of samples per tissue
+colSums(table(astro_srt$process_number, astro_srt$Tissue)>0)
+# Both things combined (there might be another way of doing this, but it works)#
+colSums(table(astro_srt$caseNO, astro_srt$ageSex, astro_srt$Tissue)>0)
+# Number of nuclei per sexage group
+table(astro_srt$ageSex)
+
+#number of nuclei per tissue
+table(astro_srt$Tissue)
+#number of nuclei per age group
+table(astro_srt$AgeGroup)
+#number of nuclei per sex group
+table(astro_srt$gender)
+
+# both things combined
+table(astro_srt$ageSex, astro_srt$Tissue)
+
+
+```
+
+
+
+## Age and Sex Grouping
+
+Separate by both things in 4 plots. The plots are corrected by number of cells
+per sexage group first (looking at the distribution of each group across
+clusters) and then corrected for the number of cells per cluster (to visualize
+the small and big clusters equally).
+
+```{r, fig.width=12, fig.height=12}
+# Sex
+# DimPlot(astro_srt, split.by = "ageSex", group.by = "Tissue", ncol = 5)
+DimPlot(astro_srt, split.by = "ageSex", group.by = "astrocytes_clu", ncol = 2,
+        cols = mycoloursP, pt.size = 2, label = TRUE, label.size = 6)
+```
+
+Calculate proportion clusters for each AgeSex
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_ageSex_cluster <- table(astro_srt$astrocytes_clu, astro_srt$ageSex)
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_ageSex_table_2 <- prop.table(sum_ageSex_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_ageSex_table_2_1 <- prop.table(prop_ageSex_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+
+prop_ageSex <- as.data.frame(prop_ageSex_table_2)
+colnames(prop_ageSex) <- c("cluster", "ageSex", "proportion")
+
+level_list <- c("Young women", "Old women", "Young men", "Old men")
+prop_ageSex$ageSex <- factor(prop_ageSex$ageSex, levels = level_list)
+
+
+# plot a barplot proportion
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+
+```
+
+Plot the same for Sex and Age separate
+
+```{r}
+# separate the sex and age
+prop_ageSex_sep <- separate(prop_ageSex, 
+                            col = ageSex, 
+                            into = c("age", "sex"), 
+                            sep = " ")
+
+
+
+
+# plot a barplot for the sex
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# And for the age
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Tissue
+
+split the clustering by the original tissues
+
+```{r, fig.width=9, fig.height=3}
+Idents(astro_srt) <- "astrocytes_clu"
+umap_clusters <- DimPlot(astro_srt, split.by = "Tissue", 
+                         cols = mycoloursP, pt.size = 2, label = T) +NoLegend()
+umap_clusters
+```
+
+Calculate proportion clusters for each Tissue
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_tissue_cluster <- table(astro_srt$astrocytes_clu, astro_srt$Tissue)
+
+keep <- rowSums(sum_tissue_cluster) > 0
+sum_tissue_cluster <- sum_tissue_cluster[keep,]
+
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_tissue_table_2 <- prop.table(sum_tissue_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_tissue_table_2_1 <- prop.table(prop_tissue_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_tissue <- as.data.frame(prop_tissue_table_2)
+colnames(prop_tissue) <- c("cluster", "Tissue", "proportion")
+
+
+#plot
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  ylab("Normalised counts")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+### tables shown with numbers
+
+To better understand the proportions I show the different steps with tables
+
+```{r}
+sum_ageSex_cluster
+(prop_ageSex_table_2)*100
+prop_ageSex_table_2_1*100
+```
+
+```{r, fig.width= 7, fig.height=15, fig.fullwidth=TRUE}
+
+FeaturePlot(astro_srt, features = c("GJA1",
+                                    "AQP4", 
+                                    "GLUL", 
+                                    "SOX9", 
+                                    "NDRG2", 
+                                    "GFAP", 
+                                    "ALDH1A1", 
+                                    "ALDH1L1", 
+                                    "VIM", 
+                                    "APOE", 
+                                    "FGFR3"), ncol = 2)
+```
+
+
+# Comparison to previous results
+
+Itoh et al. 2017, PNAS report more Igha regional differences in muring astrocytes
+with those in the cerebellum and spinal cord being similar and different from 
+those in the cortex and thalamus. I tested a few of their genes and they are not 
+expressed in my dataset. Humans are no mice..
+
+# GSEA
+
+## Tissue
+
+### BA4
+
+```{r}
+
+ba4_sig <- subset(tissue_markers, tissue_markers$cluster == "BA4" &
+                    tissue_markers$p_val_adj < 0.05)
+
+hallmark <- msigdbr(species = "Homo sapiens", category = "H")
+geneset <- hallmark %>% split(x = .$gene_symbol, f = .$gs_name)
+
+
+# Prepare input data
+ranks <- ba4_sig %>% dplyr::select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+ba4_gsea_sig <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+
+
+
+# Tidy output
+ba4_gsea_sig_tidy <- ba4_gsea_sig %>% as_tibble() %>% arrange(desc(NES))
+ba4_gsea_sig_tidy %>% dplyr::select(-leadingEdge, -ES) %>% arrange(padj)
+
+# Create barplot 
+ggplot(ba4_gsea_sig_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+
+```
+
+### CB
+
+```{r}
+
+cb_sig <- subset(tissue_markers, tissue_markers$cluster == "CB" &
+                    tissue_markers$p_val_adj < 0.05)
+
+
+# Prepare input data
+ranks <- cb_sig %>% dplyr::select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+cb_gsea_sig <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+
+
+
+# Tidy output
+cb_gsea_sig_tidy <- cb_gsea_sig %>% as_tibble() %>% arrange(desc(NES))
+cb_gsea_sig_tidy %>% dplyr::select(-leadingEdge, -ES) %>% arrange(padj)
+
+# Create barplot 
+ggplot(cb_gsea_sig_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+
+```
+
+
+### CSC
+
+```{r}
+
+csc_sig <- subset(tissue_markers, tissue_markers$cluster == "CSC" &
+                    tissue_markers$p_val_adj < 0.05)
+
+
+# Prepare input data
+ranks <- csc_sig %>% dplyr::select(gene, avg_log2FC)
+ranks <- deframe(ranks)
+# Run fgsea
+csc_gsea_sig <- fgsea(pathways = geneset, stats = ranks, scoreType= "pos")
+
+
+
+# Tidy output
+csc_gsea_sig_tidy <- csc_gsea_sig %>% as_tibble() %>% arrange(desc(NES))
+csc_gsea_sig_tidy %>% dplyr::select(-leadingEdge, -ES) %>% arrange(padj)
+
+# Create barplot 
+ggplot(csc_gsea_sig_tidy, aes(reorder(pathway, NES), NES)) + geom_col(aes(fill=padj<0.05)) + theme_minimal() + coord_flip()
+
+```
+# gene ontology uding cluserProfiler
+
+## CSC
+```{r}
+
+#Subset the differential expression genelist from a seurat diff expression result with the parameters you use.
+DTAOL <- subset(csc_sig, p_val_adj < 0.01 & abs(avg_log2FC) > 0.1)
+DTAOL$Gene <- DTAOL$gene
+#remove any duplicates (sanity check for me)
+genemodulesGO <- DTAOL[!duplicated(DTAOL$Gene),]
+
+#Convert to entrez
+listMarts()
+ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl",
+                  host = "www.ensembl.org")
+
+
+listDatasets(ensembl)
+attributes = listAttributes(ensembl)
+
+Biomart_gencode_ensembl84_biotypes <- getBM(attributes=c("ensembl_gene_id",
+                                                         "entrezgene_id",
+                                                         "gene_biotype",
+                                                         "hgnc_symbol"), 
+                                            filters = "hgnc_symbol", 
+                                            values = DTAOL$Gene, 
+                                            mart = ensembl,
+                     uniqueRows = FALSE)
+
+
+
+Biomart_gencode_ensembl84_biotypes[, 'gene_biotype'] <- 
+  as.factor(Biomart_gencode_ensembl84_biotypes[,'gene_biotype'])
+
+#Filter for only our genes
+biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+                              %in% astro_srt@assays$RNA@var.features)
+entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+                    %in% astro_srt@assays$RNA@var.features)
+entrezmatched <- entrezID[match(genemodulesGO$Gene,entrezID$hgnc_symbol),]
+#you might need to remove NAs
+entrezmatched <- entrezmatched[! apply(entrezmatched[,c(1,3)], 1,function (x) anyNA(x)),]
+allLLIDs <- entrezmatched$entrezgene
+
+modulesReactome <- enrichPathway(gene=as.character(allLLIDs),organism="human",
+                                    pvalueCutoff=0.01,
+                                    qvalueCutoff = 0.3,
+                                    pAdjustMethod = "none", 
+                                    readable=T)
+head(as.data.frame(modulesReactome))
+```
+## Reactome Analysis {#l1cam}
+```{r fig.width=5}
+dotplot(modulesReactome, showCategory=20)
+```
+
+```{r fig.width=10, fig.height = 10}
+x2 <- pairwise_termsim(modulesReactome) 
+emapplot(x2)
+
+```
+
+## CB
+```{r}
+
+#Subset the differential expression genelist from a seurat diff expression result with the parameters you use.
+DTAOL <- subset(cb_sig, p_val_adj < 0.01 & abs(avg_log2FC) > 0.1)
+DTAOL$Gene <- DTAOL$gene
+#remove any duplicates (sanity check for me)
+genemodulesGO <- DTAOL[!duplicated(DTAOL$Gene),]
+
+#Convert to entrez
+listMarts()
+ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl",
+                  host = "www.ensembl.org")
+
+
+listDatasets(ensembl)
+attributes = listAttributes(ensembl)
+
+Biomart_gencode_ensembl84_biotypes <- getBM(attributes=c("ensembl_gene_id",
+                                                         "entrezgene_id",
+                                                         "gene_biotype",
+                                                         "hgnc_symbol"), 
+                                            filters = "hgnc_symbol", 
+                                            values = DTAOL$Gene, 
+                                            mart = ensembl,
+                     uniqueRows = FALSE)
+
+
+
+Biomart_gencode_ensembl84_biotypes[, 'gene_biotype'] <- 
+  as.factor(Biomart_gencode_ensembl84_biotypes[,'gene_biotype'])
+
+#Filter for only our genes
+biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+                              %in% astro_srt@assays$RNA@var.features)
+entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+                    %in% astro_srt@assays$RNA@var.features)
+entrezmatched <- entrezID[match(genemodulesGO$Gene,entrezID$hgnc_symbol),]
+#you might need to remove NAs
+entrezmatched <- entrezmatched[! apply(entrezmatched[,c(1,3)], 1,function (x) anyNA(x)),]
+allLLIDs <- entrezmatched$entrezgene
+
+modulesReactome <- enrichPathway(gene=as.character(allLLIDs),organism="human",
+                                    pvalueCutoff=0.01,
+                                    qvalueCutoff = 0.3,
+                                    pAdjustMethod = "none", 
+                                    readable=T)
+head(as.data.frame(modulesReactome))
+```
+## Reactome Analysis {#l1cam}
+```{r fig.width=5}
+dotplot(modulesReactome, showCategory=20)
+```
+
+```{r fig.width=10, fig.height = 10}
+x2 <- pairwise_termsim(modulesReactome) 
+emapplot(x2)
+
+```
+
+
+## BA4
+```{r}
+
+#Subset the differential expression genelist from a seurat diff expression result with the parameters you use.
+DTAOL <- subset(ba4_sig, p_val_adj < 0.01 & abs(avg_log2FC) > 0.1)
+DTAOL$Gene <- DTAOL$gene
+#remove any duplicates (sanity check for me)
+genemodulesGO <- DTAOL[!duplicated(DTAOL$Gene),]
+
+#Convert to entrez
+listMarts()
+ensembl = useMart("ensembl", dataset="hsapiens_gene_ensembl",
+                  host = "www.ensembl.org")
+
+
+#listDatasets(ensembl)
+attributes = listAttributes(ensembl)
+
+Biomart_gencode_ensembl84_biotypes <- getBM(attributes=c("ensembl_gene_id",
+                                                         "entrezgene_id",
+                                                         "gene_biotype",
+                                                         "hgnc_symbol"), 
+                                            filters = "hgnc_symbol", 
+                                            values = DTAOL$Gene, 
+                                            mart = ensembl,
+                     uniqueRows = FALSE)
+
+
+
+Biomart_gencode_ensembl84_biotypes[, 'gene_biotype'] <- 
+  as.factor(Biomart_gencode_ensembl84_biotypes[,'gene_biotype'])
+
+#Filter for only our genes
+biotype_all_dataset <- subset(Biomart_gencode_ensembl84_biotypes, hgnc_symbol 
+                              %in% astro_srt@assays$RNA@var.features)
+entrezID <-  subset(biotype_all_dataset, biotype_all_dataset$hgnc_symbol
+                    %in% astro_srt@assays$RNA@var.features)
+entrezmatched <- entrezID[match(genemodulesGO$Gene,entrezID$hgnc_symbol),]
+#you might need to remove NAs
+entrezmatched <- entrezmatched[! apply(entrezmatched[,c(1,3)], 1,function (x) anyNA(x)),]
+allLLIDs <- entrezmatched$entrezgene
+
+modulesReactome <- enrichPathway(gene=as.character(allLLIDs),organism="human",
+                                    pvalueCutoff=0.01,
+                                    qvalueCutoff = 0.3,
+                                    pAdjustMethod = "none", 
+                                    readable=T)
+head(as.data.frame(modulesReactome))
+```
+## Reactome Analysis {#l1cam}
+```{r fig.width=8}
+dotplot(modulesReactome, showCategory=20)
+```
+
+```{r fig.width=10, fig.height = 10}
+x2 <- pairwise_termsim(modulesReactome) 
+emapplot(x2)
+
+```
+
+# Conclusion
+
+
+  
+  
+
+
+
+# Change in annotation
+I beleve AS_9 are ependymal cells...
+
+
+```{r}
+astro_srt@meta.data$cluster_id <- ifelse(astro_srt@meta.data$astrocytes_clu ==
+                                           "AS_9", "AS_9_ep", 
+                                         paste(astro_srt@meta.data$astrocytes_clu))
+
+astro_srt@meta.data$cluster_id <- factor(astro_srt@meta.data$cluster_id, levels =
+                                           c("AS_1",
+                                             "AS_2",
+                                             "AS_5",
+                                             "AS_3",
+                                             "AS_4",
+                                             "AS_7",
+                                             "AS_6",
+                                             "AS_8",
+                                             "AS_9_ep",
+                                             "AS_10",
+                                             "AS_11",
+                                             "AS_12"))
+```
+
+COLOURS FOR ASTROCYTE PLOTS
+```{r}
+
+DimPlot(astro_srt, split.by = "Tissue", label = TRUE, group.by = "cluster_id", 
+        cols = mycoloursP[35:50])
+
+```
+
+
+
+# Save dataset
+
+```{r, eval = FALSE}
+dir.create(here("data",
+                "single_nuc_data",
+                "astrocytes"))
+           
+saveRDS(astro_srt, here("data",
+                        "single_nuc_data",
+                        "astrocytes",
+                        "HCA_astrocytes.RDS"))
+
+```
+
+
+# Are there reactive astrocytes in the dataset?
+
+```{r}
+astro_srt@meta.data$astrocytes_clu_ep <- factor(astro_srt@meta.data$astrocytes_clu_ep, 
+                                                levels = c("AS_1",
+                                                           "AS_2",
+                                                           "AS_3",
+                                                           "AS_4",
+                                                           "AS_5",
+                                                           "AS_6",
+                                                           "AS_7",
+                                                           "AS_8",
+                                                           "AS_10",
+                                                           "AS_11",
+                                                           "AS_12",
+                                                           "EPC"))
+VlnPlot(astro_srt, features = "GFAP", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "VIM", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "SYNM", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "NES", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "ALDOC", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, features = "FABP7", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(astro_srt, features = "MAOB", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(astro_srt, features = "TSPO", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(astro_srt, features = "CRYAB", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "HSPB1", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "C3", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "CHI3L1", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "THBS1", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "NTRK2", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+VlnPlot(astro_srt, features = "S100B", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+```{r}
+VlnPlot(astro_srt, features = "SOX9", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, features = "STAT3", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+#EAAT1
+VlnPlot(astro_srt, features = "SLC1A3", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+```{r}
+#EAAT2
+VlnPlot(astro_srt, features = "SLC1A2", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+
+
+```{r}
+#KIR4.1
+VlnPlot(astro_srt, features = "KCNJ10", group.by = "astrocytes_clu_ep",
+        split.by = "AgeGroup")
+
+```
+# Volcano plots
+
+Below are vulcano plots of age sex and pairwise tissue and the corresponding vln
+plots of the most interesting hits
+
+# Tissue
+
+```{r, fig.height = 6, fig.width= 6}
+
+Idents(astro_srt) <- "Tissue"
+
+
+#CB vs BA4
+
+cb_ba4_mark <- FindMarkers(astro_srt, ident.1 = "CB",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+cb_ba4_mark$pval_plot <- ifelse(cb_ba4_mark$p_val_adj == 0, 
+                                paste(min(cb_ba4_mark$p_val_adj[cb_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(cb_ba4_mark$p_val_adj))
+
+cb_ba4_mark$pval_plot<- as.numeric(paste(cb_ba4_mark$pval_plot))
+
+fil_cb_ba4 <- subset(cb_ba4_mark, cb_ba4_mark$p_val_adj < 0.05)
+
+xsort <- fil_cb_ba4[order(fil_cb_ba4$avg_log2FC),]
+
+top_x <- rownames(head(xsort))
+bottom_x <- rownames(tail(xsort))
+
+EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CB vs. BA4",
+    subtitle = "Astrocytes",
+    selectLab = c(top_x, bottom_x),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+cb_ba4 <- EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CB vs. BA4",
+    subtitle = "Astrocytes",
+    selectLab = c("ADGRV1", "TMEM132B", "GRID2", "TRPM3", 
+                  "FAT3", "GRM5", "EMID1", "L3MBTL4", "ITPRID1",
+                  "FAT3", "SKAP2"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+
+
+
+
+
+
+
+```
+
+```{r, fig.height = 6, fig.width= 6}
+#CSC vs BA4
+
+csc_ba4_mark <- FindMarkers(astro_srt, ident.1 = "CSC",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+csc_ba4_mark$pval_plot <- ifelse(csc_ba4_mark$p_val_adj == 0, 
+                                paste(min(csc_ba4_mark$p_val_adj[csc_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_ba4_mark$p_val_adj))
+
+csc_ba4_mark$pval_plot<- as.numeric(paste(csc_ba4_mark$pval_plot))
+
+
+fil_csc_ba4 <- subset(csc_ba4_mark, csc_ba4_mark$p_val_adj < 0.05)
+
+xsort <- fil_csc_ba4[order(fil_csc_ba4$avg_log2FC),]
+
+top_x <- rownames(head(xsort))
+bottom_x <- rownames(tail(xsort))
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-6, 5),
+    ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "Astrocytes",
+    selectLab = c(top_x, bottom_x, "GFAP"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "Oligodendroglia",
+    )
+
+
+csc_ba4 <- EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CSC vs. BA4",
+    subtitle = "Astrocytes",
+    selectLab = c("ADGRV1", "MDGA2", "LINC00609", "CTNNA3", 
+                  "LUZP2", "LRMDA", "TMEM132B", "SHISA6", "LAMA2",
+                  "SPARC", "SKAP2", "FAT3", "AL589740.1"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+```
+
+```{r, fig.height = 6, fig.width= 6}
+#CSC vs CB
+
+csc_cb_mark <- FindMarkers(astro_srt, ident.1 = "CSC",
+                          ident.2 = "CB",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+csc_cb_mark$pval_plot <- ifelse(csc_cb_mark$p_val_adj == 0, 
+                                paste(min(csc_cb_mark$p_val_adj[csc_cb_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_cb_mark$p_val_adj))
+
+csc_cb_mark$pval_plot<- as.numeric(paste(csc_cb_mark$pval_plot))
+
+fil_csc_cb <- subset(csc_cb_mark, csc_cb_mark$p_val_adj < 0.05)
+
+xsort <- fil_csc_cb[order(fil_csc_cb$avg_log2FC),]
+
+top_x <- rownames(head(xsort))
+bottom_x <- rownames(tail(xsort))
+
+EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-6, 5),
+    ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "CSC vs. CB",
+    subtitle = "Astrocytes",
+    selectLab = c(top_x[1:5], bottom_x[-5], "CTNNA3", "PAK3", "SKAP2"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. CB",
+    subtitle = "Astrocutes",
+    )
+
+
+csc_cb <- EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    #xlim = c(-6, 5),
+    #ylim = c(0, 300),
+    FCcutoff = 0.25,
+    title = "CSC vs. CB",
+    subtitle = "Astrocytes",
+    selectLab = c("ITPRID1", "MDGA2", "CTNNA3", "GRIA1", 
+                  "GRID2", "SKAP2", "PAK3", "SLC8A1", "LAMA2",
+                  "GREB1L", "FAT3", "GFAP", "SKAP2"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+    pCutoff = 0.05) 
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "ITPRID1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "GRIA1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "GRM5", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "GRID2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "RYR3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PRRX1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "CABLES1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "TMEM108", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "SMOC1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "FAT3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PLXNA4", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "MIAT", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "XYLT1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "MDGA2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "CTNNA3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PPFIA2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "SORCS3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "SKAP2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "ROBO2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "ADGRV1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "TMEM132B", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "EMID1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "CTNNA3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "LRMDA", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "LAMA2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "AHCYL1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "SHROOM3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "LIMCH1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "FRY", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PDZD2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "TRPM3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "GREB1L", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "LUZP2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "DAO", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "SH3GL2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "LINC00609", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "EFNA5", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "AL589740.1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+
+VlnPlot(astro_srt, features = "NCAN", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "AC073050.1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+## Age
+
+```{r, eval = FALSE}
+
+age_markers$old_log2 <- ifelse(age_markers$cluster == "Old", 
+                           paste(age_markers$avg_log2FC),
+                           paste(age_markers$avg_log2FC * -1))
+
+age_markers$old_log2 <- as.numeric(paste(age_markers$old_log2))
+
+age_markers$pval_plot <- ifelse(age_markers$p_val_adj == 0, 
+                                paste(min(age_markers$p_val_adj[age_markers$p_val_adj >0]) * 
+                                        0.01),
+                                paste(age_markers$p_val_adj))
+
+age_markers$pval_plot<- as.numeric(paste(age_markers$pval_plot))
+
+```
+
+
+```{r}
+
+Idents(astro_srt) <- "AgeGroup"
+age_mark <- FindMarkers(astro_srt, ident.1 = "Old",
+                          ident.2 = "Young",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+age_mark$pval_plot <- ifelse(age_mark$p_val_adj == 0, 
+                                paste(min(age_mark$p_val_adj[age_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(age_mark$p_val_adj))
+
+age_mark$pval_plot<- as.numeric(paste(age_mark$pval_plot))
+
+
+
+fil_age <- subset(age_mark, age_mark$p_val_adj < 0.05)
+
+xsort <- fil_age[order(fil_age$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(age_mark,
+    lab = rownames(age_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+   # xlim = c(-6, 5),
+   # ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "Old vs. Young",
+    subtitle = "Astrocytes",
+    selectLab = c(top_x, bottom_x, "NPL", "GREB1L", "FAT3"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+
+
+EnhancedVolcano(age_markers,
+    lab = age_markers$gene,
+    x = 'old_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Old vs. young",
+    subtitle = "Astrocytes")
+
+
+EnhancedVolcano(age_mark,
+    lab = rownames(age_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-1.5, 1.5),
+    ylim = c(0, 50),
+    FCcutoff = 0.25,
+    title = "Old vs. Young",
+    subtitle = "Astrocytes",
+    selectLab = c("NPL", "TRPM3", "GREB1L", "FAT3", "SDC4", "BCAN", 
+                  "SPARCL1", "RHPN1", "SSBP2", "SDC4", "RHPN1", "CACNB2",
+                  "KCND2", "CST3", "TTYH1", "SNRNP70"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "NPL", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "NPL", group.by = "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "SSBP2", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "SSBP2", group.by =  "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "GREB1L", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "GREB1L", group.by =  "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "SDC4", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "SDC4", group.by = "AgeGroup")
+
+
+```
+
+
+
+```{r}
+VlnPlot(astro_srt, feature = "SOX5", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "SOX5", group.by =  "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "RORA", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "RORA", group.by  = "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "KCND2", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "KCND2", group.by =  "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "NEBL", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "NEBL", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "LGR4", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "LGR4", group.by =  "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "ERBB4", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "ERBB4", group.by =  "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PPARGC1A", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "PPARGC1A", group.by =  "AgeGroup")
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "KCTD8", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "KCTD8", group.by = 
+          "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "DST", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "DST", group.by =  "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "DST", group.by = 
+          "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "BCAN", group.by = "Tissue", split.by = "AgeGroup")
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "GREB1L", group.by = "AgeGroup")
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "PTGDS", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "LAMA2", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(astro_srt, feature = "MAP4K4", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "CLIP1", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+```{r}
+VlnPlot(astro_srt, feature = "HSPA1A", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "CPAMD8", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "GAPDH", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "RHPN1", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+```{r}
+VlnPlot(astro_srt, feature = "HSPB1", group.by = "gender")+ 
+  scale_fill_manual(values=mycoloursP[10:40]) 
+
+
+```
+
+
+```{r, fig.width=6, fig.height=6}
+
+
+sex_markers$male_log2 <- ifelse(sex_markers$cluster == "M", 
+                           paste(sex_markers$avg_log2FC),
+                           paste(sex_markers$avg_log2FC * -1))
+
+sex_markers$male_log2 <- as.numeric(paste(sex_markers$male_log2))
+
+sex_markers$pval_plot <- ifelse(sex_markers$p_val_adj == 0, 
+                                paste(min(sex_markers$p_val_adj[sex_markers$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_markers$p_val_adj))
+
+sex_markers$pval_plot<- as.numeric(paste(sex_markers$pval_plot))
+
+fil_genes <- subset(sex_markers, abs(sex_markers$avg_log2FC) > 0.5 & 
+                      sex_markers$p_val_adj < 0.0001)
+
+fil_genes<- fil_genes$gene
+
+EnhancedVolcano(sex_markers,
+    lab = sex_markers$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs. female",
+    subtitle = "",
+    selectLab = fil_genes,
+    boxedLabels = TRUE,
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    #labFace = 'bold',
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black')
+
+
+EnhancedVolcano(sex_markers,
+    lab = sex_markers$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs female",
+    subtitle = ""
+    #boxedLabels = TRUE,
+    #drawConnectors = TRUE,
+    #widthConnectors = 1.0,
+    #colConnectors = 'black'
+)
+
+```
+
+
+```{r}
+
+Idents(astro_srt) <- "gender"
+sex_mark_p_n <- FindMarkers(astro_srt, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+sex_mark_p_n$pval_plot <- ifelse(sex_mark_p_n$p_val_adj == 0, 
+                                paste(min(sex_mark_p_n$p_val_adj[sex_mark_p_n$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_mark_p_n$p_val_adj))
+
+sex_mark_p_n$pval_plot<- as.numeric(paste(sex_mark_p_n$pval_plot))
+
+EnhancedVolcano(sex_mark_p_n,
+    lab = rownames(sex_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-2.8, 1.5),
+    #ylim = c(0, 50),
+    FCcutoff = 0.25,
+    title = "Male vs. Female",
+    subtitle = "Astrocytes",
+    selectLab = c("XIST", "UTY", "TTTY14", "RGS6", "HSPA1A", "PTGDS", 
+                  "ID2", "LAMA2", "APOE", "GFAP", "JUN", "HSPA1B"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+
+```
+
+Without gonosomal genes
+
+```{r}
+EnhancedVolcano(sex_mark_p_n,
+    lab = rownames(sex_mark_p_n),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-2, 1.5),
+    ylim = c(0, 35),
+    FCcutoff = 0.25,
+    title = "Male vs. Female",
+    subtitle = "Astrocytes",
+    selectLab = c("RGS6", "HSPA1A", "PTGDS", 
+                  "ID2", "LAMA2", "APOE", "GFAP", "JUN", "HSPA1B", 
+                  "MP4K4", "AKAP6", "SAMD4A", "CPAMD8"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = FALSE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[25:30],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0,
+   pCutoff = 0.05) 
+
+
+```
+
+```{r}
+Idents(astro_srt) <- "gender"
+sex_mark <- FindMarkers(astro_srt, ident.1 = "M",
+                          ident.2 = "F",
+                          only.pos = FALSE, 
+                          min.pct = 0.25, test.use = "MAST")
+
+sex_mark$pval_plot <- ifelse(sex_mark$p_val_adj == 0, 
+                                paste(min(sex_mark$p_val_adj[sex_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(sex_mark$p_val_adj))
+
+sex_mark$pval_plot<- as.numeric(paste(sex_mark$pval_plot))
+
+
+
+fil_sex <- subset(sex_mark, sex_mark$p_val_adj < 0.05)
+
+xsort <- fil_sex[order(fil_sex$avg_log2FC),]
+
+top_x <- head(rownames(xsort))
+bottom_x <- tail(rownames(xsort))
+
+EnhancedVolcano(sex_mark,
+    lab = rownames(sex_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    xlim = c(-6, 5),
+    ylim = c(0, 300),
+    FCcutoff = 0.5,
+    title = "Male vs. Female",
+    subtitle = "Astrocytes",
+    selectLab = c(top_x[-4], bottom_x, "RGS6"),
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    labFace = 'bold',
+    boxedLabels = TRUE,
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black',
+    #parseLabels = TRUE,
+    col = mycoloursP[14:50],
+    legendPosition = 'bottom',
+    legendLabSize = 14,
+    legendIconSize = 2.0) + coord_flip()
+
+
+```
+
+```{r}
+genes <- c(   
+                           
+                           #AS_6
+                           "GABRA2",
+                           "EPHA6",
+                           "EPHB1",
+                           "ADGRV1",
+                           
+                           #AS_5
+                           "LINC00609",
+                           "EMID1",
+                           "CTSH",
+                           
+                           #AS_9_ep
+                           "CFAP43",
+                           "SPAG17",
+                           "DNAH11",
+                           
+                            #AS_10
+                           "SPOCK1",
+                           "SPSB1",
+                           #"SAMD4A",
+                           #"CLIP1",
+                           "MYO1E",
+                           
+                           #AS_8
+                           #"ST18",
+                           "SLC24A2",
+                           #"RNF220",
+                           "ELMO1",
+                           "NKAIN2",
+                           "PLP1",
+                           
+                           #AS_11,
+                           "S100B",
+                           "TMSB4X",
+                           #"FTL",
+                           "MTURN",
+                           
+                           
+                           #AS_7
+                           "SLC6A11",
+                           "PAK3",
+                           "GRM5",
+                           #"VAV3",
+                           "PTPRT",
+                           "FAT3",
+                           
+                            #AS_4
+                           "NTNG2",
+                           "ATP10B",
+                           "PAX3",
+                           
+                            #AS_1
+                           "MDGA2",
+                           "EDNRB",
+                           "PPFIA2",
+                           "KCNJ16",
+                           
+                            #AS_3
+                           "LINC01094",
+                           #"PRKAG2",
+                           "BHLHE40",
+                           "NRXN3",
+                           
+                           
+                           #AS_12
+                           "YWHAG",
+                           "ATP1B1",
+                           "GNAS",
+                           "NEFM",
+                           
+                            # AS_2
+                           "APLNR",
+                           "CDC42EP4",
+                           "PAMR1"#,
+                           
+                           #Astrocytes
+                           #"GJA1",
+                           #"GFAP",
+                           #"SKAP2"
+                           )
+                           
+  
+ 
+
+
+invert_genes <- rev(genes)
+
+levles <- c("AS_6",
+                                               "AS_5",
+                                               "AS_9",
+                                               "AS_10",
+                                               "AS_8",
+                                               "AS_11",
+                                               "AS_7",
+                                               "AS_4",
+                                               "AS_1",
+                                               "AS_3",
+                                               "AS_12",
+                                               "AS_2")
+
+astro_srt$astrocytes_clu  <- factor(astro_srt$astrocytes_clu, 
+                                    levels = rev(levles))
+Idents(astro_srt) <- "astrocytes_clu"
+
+DotPlot(astro_srt, features = unique(genes))+ 
+  theme(axis.text.x = element_text(angle = 45, hjust=0.9))
+
+DotPlot(astro_srt, features = unique(invert_genes))+ 
+  theme(axis.text.x = element_text(angle = 45, hjust=0.9))
+
+
+DotPlot(micro_srt, features = unique(invert_genes))+
+  theme(axis.text.x=element_text(angle=90,hjust=0.9,vjust=0.2)) + coord_flip()
+
+```
+
+```{r}
+FeaturePlot(astro_srt, features = c("ADGRV1", "FAT3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(astro_srt, features = c("ATP10B", "APLNR"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(astro_srt, features = c("PRKAG2", "GNAS"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+
+
+```{r}
+FeaturePlot(astro_srt, features = c("CD163", "FAM110B"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+FeaturePlot(astro_srt, features = c("HIF1A", "TLN2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+# Session Info
+
+
+```{r}
+sessionInfo()
+```

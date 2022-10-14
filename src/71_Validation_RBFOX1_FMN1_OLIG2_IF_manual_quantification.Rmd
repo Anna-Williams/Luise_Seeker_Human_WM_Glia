@@ -1,0 +1,457 @@
+---
+title: "Validation_FMN1_RBFOX1_OLIG2_IF_manual_quantification"
+author: "Luise A. Seeker"
+date: "09/08/2022"
+output: html_document
+---
+This is based on only three stainings BA4 samples (I did quantify 1 CSC sample 
+but there is so much FMN1 in the background in the CSC that I think it is not 
+reliable). FMN1 staining
+looks very interesting, particularly in the brain where it almost marks tiling
+cells of unclear identity that I think may be microglia based in them mostly 
+being OLIG2 negative and based on the RNAseq data that also marks neurons and 
+microglia as expressing FMN1 but not astrocytes. 
+
+OPCs and COPs also do not express FMN1 which means it may be responsible
+for cytoskeleton reshaping in other situations than myelination (where the 
+Arp2/3 complex is important). Maybe it is important for re-myelinaton?
+So, what I need to do here is to only show that FMN+ olig2+ cells exist which 
+is more tricky than it sounds, because FMN1 is located in processes. 
+
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+library(Seurat)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+fmn1_rbfox1 <- read.csv(here("data", 
+                   "validation_data", 
+                   "20220818_FMN1_RBFOX1_OLIG2_manual.csv"))
+
+```
+
+
+```{r}
+names(fmn1_rbfox1)
+
+fmn1_rbfox1$tissue <- as.factor(fmn1_rbfox1$tissue)
+
+fmn1_rbfox1$sample_id <- factor(fmn1_rbfox1$sample_id, levels = c("SD021_17_BA4",
+                                                                "SD031_14_BA4",
+                                                                "SD042_18_BA4",
+                                                                "SD008_14_CSC"))
+
+
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("FMN1_pos",
+                "OLIG2_pos",
+                "RBFOX1_pos", 
+                "FMN1_OLIG2",
+                "FMN1_RBFOX1",
+                "RBFOX1_OLIG2",
+                "FMN1_RBFOX1_OLIG2",
+                "negative")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+Remove cells that are negative for all tested markers:
+
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("FMN1_pos",
+                "OLIG2_pos",
+                "RBFOX1_pos", 
+                "FMN1_OLIG2",
+                "FMN1_RBFOX1",
+                "RBFOX1_OLIG2",
+                "FMN1_RBFOX1_OLIG2")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+
+Exclude cells that are not positive for OLIG2
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("OLIG2_pos",
+                "FMN1_OLIG2",
+                "RBFOX1_OLIG2",
+                "FMN1_RBFOX1_OLIG2")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+collapse all samples BA4 and CSC
+```{r}
+
+long_data$all_samples <- "all_samples"
+
+ggplot(long_data, aes(x = all_samples , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = all_samples, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+remove OLIG2_pos that are negative for both RBFOX1 and FMN1
+```{r}
+
+marker_dat <- subset(long_data, long_data$keycol != "OLIG2_pos")
+ggplot(marker_dat, aes(x = all_samples, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+
+BA4 only
+```{r}
+subs_data <- subset(long_data, long_data$tissue == "BA4")
+
+ggplot(subs_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(subs_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+```{r}
+
+subs_subs_data <- subset(subs_data, subs_data$keycol != "OLIG2_pos")
+ggplot(subs_subs_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+
+```{r}
+summary(fmn1_rbfox1$FMN1_oligos_perc_total_oligos)
+```
+
+
+```{r}
+nad_ol <-  readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+
+```
+
+
+FMN1 and RBFOX1 co-expression in snRNAseq
+
+```{r}
+
+oligos <- subset(nad_ol, idents = c("Oligo_A",
+                                    "Oligo_B",
+                                    "Oligo_C",
+                                    "Oligo_D",
+                                    "Oligo_E",
+                                    "Oligo_F"))
+Idents(oligos) <- "Tissue"
+ba4_ol <-subset(oligos, idents = "BA4")
+cb_ol <-subset(oligos, idents = "CB")
+csc_ol <-subset(oligos, idents = "CSC")
+
+
+FMN1 <- 'FMN1' 
+RBFOX1 <- 'RBFOX1' 
+FMN1.cutoff <- 1 
+RBFOX1.cutoff <- 1 
+
+#BA4
+FMN1_cells_ba4 <- length(which(FetchData(ba4_ol, vars = FMN1) > FMN1.cutoff & 
+                                      FetchData(ba4_ol, vars = RBFOX1) < RBFOX1.cutoff))
+RBFOX1_cells_ba4 <- length(which(FetchData(ba4_ol, vars = RBFOX1) > RBFOX1.cutoff& 
+                                      FetchData(ba4_ol, vars = FMN1) < FMN1.cutoff))
+FMN1_RBFOX1_olig2_cells_ba4 <- length(which(FetchData(ba4_ol, vars = RBFOX1) > RBFOX1.cutoff & 
+                                      FetchData(ba4_ol, vars = FMN1) > FMN1.cutoff))
+all_cells_incluster_ba4 <- table(ba4_ol@active.ident)
+FMN1_ba4 <-FMN1_cells_ba4/all_cells_incluster_ba4 * 100 
+# Percentage of cells in dataset that express FMN1
+
+RBFOX1_ba4 <- RBFOX1_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that express RBFOX1
+double_ba4 <- FMN1_RBFOX1_olig2_cells_ba4/all_cells_incluster_ba4 * 100 
+#Percentage of cells in dataset that co-express FMN1 + RBFOX1
+
+#CB
+FMN1_cells_cb <- length(which(FetchData(cb_ol, vars = FMN1) > FMN1.cutoff& 
+                                      FetchData(cb_ol, vars = RBFOX1) < RBFOX1.cutoff))
+RBFOX1_cells_cb <- length(which(FetchData(cb_ol, vars = RBFOX1) > RBFOX1.cutoff & 
+                                      FetchData(cb_ol, vars = FMN1) < FMN1.cutoff))
+FMN1_RBFOX1_olig2_cells_cb <- length(which(FetchData(cb_ol, vars = RBFOX1) > 
+                                         RBFOX1.cutoff & FetchData(cb_ol, vars = FMN1) >
+                                         FMN1.cutoff))
+all_cells_incluster_cb <- table(cb_ol@active.ident)
+FMN1_cb <- FMN1_cells_cb/all_cells_incluster_cb * 100 # Percentage of cells in dataset that express FMN1
+RBFOX1_cb <- RBFOX1_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that express RBFOX1
+double_cb <- FMN1_RBFOX1_olig2_cells_cb/all_cells_incluster_cb * 100 #Percentage of cells in dataset that co-express FMN1 + RBFOX1
+
+#CSC
+FMN1_cells_csc <- length(which(FetchData(csc_ol, vars = FMN1) > FMN1.cutoff& 
+                                      FetchData(csc_ol, vars = RBFOX1) < RBFOX1.cutoff))
+RBFOX1_cells_csc <- length(which(FetchData(csc_ol, vars = RBFOX1) > RBFOX1.cutoff & 
+                                      FetchData(csc_ol, vars = FMN1) < FMN1.cutoff))
+FMN1_RBFOX1_olig2_cells_csc <- length(which(FetchData(csc_ol, vars = RBFOX1) > 
+                                          RBFOX1.cutoff & FetchData(csc_ol, vars = FMN1) >
+                                          FMN1.cutoff))
+all_cells_incluster_csc <- table(csc_ol@active.ident)
+FMN1_csc <- FMN1_cells_csc/all_cells_incluster_csc * 100 
+# Percentage of cells in dataset that express FMN1
+RBFOX1_csc <- RBFOX1_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that express RBFOX1
+double_csc <- FMN1_RBFOX1_olig2_cells_csc/all_cells_incluster_csc * 100 
+#Percentage of cells in dataset that co-express FMN1 + RBFOX1
+
+df_snrna_seq <- data.frame(Tissue = c(rep("BA4", 4), 
+                                     rep("CB", 4),
+                                     rep("CSC", 4)),
+                           gene_expr = rep(c("FMN1+", 
+                                             "RBFOX1+",
+                                             "FMN1+RBFOX1+",
+                                             "Other Oligodendrocytes"), 3),
+                           percentage = c(as.numeric(FMN1_ba4), 
+                                          as.numeric(RBFOX1_ba4),
+                                          as.numeric(double_ba4),
+                                          100 - (as.numeric(FMN1_ba4)+ 
+                                          as.numeric(RBFOX1_ba4)+
+                                          as.numeric(double_ba4)),
+                                          
+                                          as.numeric(FMN1_cb), 
+                                          as.numeric(RBFOX1_cb),
+                                          as.numeric(double_cb),
+                                          100 - (as.numeric(FMN1_cb)+ 
+                                          as.numeric(RBFOX1_cb)+
+                                          as.numeric(double_cb)),
+                                          
+                                          
+                                          as.numeric(FMN1_csc), 
+                                          as.numeric(RBFOX1_csc),
+                                          as.numeric(double_csc),
+                                          100 - (as.numeric(FMN1_csc)+ 
+                                          as.numeric(RBFOX1_csc)+
+                                          as.numeric(double_csc))))
+
+
+ggplot(df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[24:50])
+```
+
+
+```{r}
+subs_df_snrna_seq <- subset(df_snrna_seq, df_snrna_seq$gene_expr !=
+                              "Other Oligodendrocytes")
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+ggplot(subs_df_snrna_seq, aes(x = Tissue, y=percentage, fill = gene_expr))+
+  geom_bar(stat="identity", position = "fill")+scale_fill_manual(values= mycoloursP[25:50])
+```
+
+Simplify further to have only FMN1 positive oligos regardless of RBFOX1 expression
+
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("OLIG2_pos",
+                "FMN1_OLIG2_sum")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+BA4 only
+```{r}
+subs_data <- subset(long_data, long_data$tissue == "BA4")
+
+ggplot(subs_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(subs_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+Conclusion:
+I found that automatically counting FMN1 positive cells lead to a large variation, 
+and hoped manual counting would alleviate this. But I still observe a lot of
+variation among samples. The FMN1 validation is tricky, because it is 
+expressed in processes and it is sometimes difficult to decide if a process
+belongs to a cell or merely touches it. I think what I can say is that a subset
+of oligodendrocytes do express FMN1 and that differences in their percentage 
+between snRNAseq and IF may be due to technical differences, sample differences
+or inaccuracy in quantifying IF images due to FMN1 being expressed in processes. 
+It was particularly difficult to quantify in Spinal cord due to staining of background structures (ECM/ cytoskelleton).
+
+```{r}
+sessionInfo()
+
+```

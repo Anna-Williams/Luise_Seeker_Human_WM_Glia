@@ -1,0 +1,1618 @@
+---
+title: "HCA neurons"
+author: "Luise A. Seeker"
+date: "03/09/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+library(future)
+library(scclusteval)
+library(clustree)
+library(tidyr)
+
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+```{r}
+e <- 40000 * 1024^2
+options(future.globals.maxSize = e)
+
+```
+
+```{r}
+seur_comb <- readRDS(here("data", 
+                          "single_nuc_data", 
+                          "all_cell_types",
+                          "srt_anno_01.RDS"))
+
+
+
+```
+
+
+```{r}
+DimPlot(seur_comb, cols = mycoloursP, label = TRUE) + NoLegend()
+
+```
+
+```{r}
+Idents(seur_comb) <- "clusters_named"
+  seur_comb <-  RenameIdents(
+    seur_comb,
+    "Oligo" = "Oligodendroglia", 
+    "Neuron_RELN+_1" = "Neurons",
+    "Astrocyte_1" = "Astrocytes", 
+    "Microglia-Macrophages_1" = "Immune Cells", 
+    "Endothelial-Pericyte_1" = "EC_PC",
+    "Endothelial-Pericyte_2" = "EC_PC",
+    "OPC"  = "Oligodendroglia", 
+    "Microglia-Macrophages_2"= "Immune Cells",
+    "Neuron_In_1" = "Neurons",
+    "Neuron_RELN+_2" = "Neurons",
+    "Neuron_In_2" = "Neurons",
+    "Neuron_Ex_1" = "Neurons", 
+    "Neuron_Ex_2" = "Neurons", 
+    "Neuron_RELN+_3" = "Neurons", 
+    "Astrocyte_2" = "Astrocytes", 
+    "Neuron_In_3" = "Neurons", 
+    "Immune" = "Immune Cells", 
+    "Neuron_Ex_3" = "Neurons", 
+    "Stromal_1" = "Stromal cells", 
+    "Stromal_2"  = "Stromal cells", 
+    "Astrocyte_3" = "Astrocytes", 
+    "Neuron_In_4" = "Neurons",
+    "Astrocyte_4"  = "Astrocytes")  
+
+DimPlot(seur_comb, cols = mycoloursP, label = TRUE) + NoLegend()    
+DimPlot(seur_comb, cols = mycoloursP[10:50], label = FALSE) + NoLegend()  
+```
+
+```{r}
+Idents(seur_comb) <- "clusters_named"
+neuro_srt <- subset(seur_comb, idents = c("Neuron_Ex_1",
+                                          "Neuron_Ex_2",
+                                          "Neuron_Ex_3",
+                                          "Neuron_In_1",
+                                          "Neuron_In_2",
+                                          "Neuron_In_3",
+                                          "Neuron_In_4",
+                                          "Neuron_RELN+_1",
+                                          "Neuron_RELN+_2",
+                                          "Neuron_RELN+_3"))
+```
+
+
+```{r}
+
+neuro_srt <- FindVariableFeatures(neuro_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes <- rownames(neuro_srt)
+neuro_srt <- ScaleData(neuro_srt, features= all_genes)
+
+neuro_srt <- RunPCA(neuro_srt, features = VariableFeatures(object = neuro_srt))
+ElbowPlot(neuro_srt)
+
+
+
+
+```
+
+
+```{r}
+
+neuro_srt <- FindNeighbors(neuro_srt, dims = 1:10)
+
+# test different resolutions for clustering
+neuro_srt <- FindClusters(neuro_srt, resolution = 0.7)
+
+
+# non-linear reduction
+neuro_srt <- RunUMAP(neuro_srt, dims = 1:10)
+
+DimPlot(neuro_srt, cols = mycoloursP[18:40], label = TRUE) + NoLegend()
+```
+
+
+
+
+
+```{r}
+neuro_srt <- FindClusters(neuro_srt, resolution = c(0.01, 0.04, 0.05, 
+                                              seq(from = 0.1, to = 1.5, by = 0.1)))
+
+
+#Generate DimPlot of all tested clustering resolutions in metadata
+# requires gtools library and Seurat
+plot_list_func <- function(seur_obj,
+                           col_pattern, 
+                           plot_cols, 
+                           clust_lab = TRUE,
+                           label_size = 8,
+                           num_col = 4,
+                           save_dir = getwd(),
+                           width=7,
+                           height=5){
+  extr_res_col <- grep(pattern = col_pattern, names(seur_obj@meta.data))
+  res_names <- names(seur_obj@meta.data[extr_res_col])
+  # gtools function, sorts gene_names alphanumeric:
+  res_names <- gtools::mixedsort(res_names) 
+  plot_l <-list()
+  for(i in 1: length(res_names)){
+  pdf(paste0(save_dir, "/",
+               res_names[i], "_umap.pdf"), width=width, height=height)
+  dim_plot <- DimPlot(seur_obj, 
+                          reduction = "umap", 
+                          cols= plot_cols,
+                          group.by = res_names[i],
+                          label = clust_lab,
+                          label.size = label_size) + NoLegend()
+  print(dim_plot)
+  dev.off()
+  print(dim_plot)
+  }
+}
+
+
+save_dir_neuro <- here("outs",
+                       "neurons",
+                       "cluster_resolutions")
+dir.create(save_dir_neuro, recursive = TRUE)
+
+plot_list_func(seur_obj = neuro_srt, 
+               col_pattern = "RNA_snn_res.",
+               plot_cols = mycoloursP[18:50],
+               save_dir = save_dir_neuro)
+
+```
+
+```{r, fig.with = 10, fig.height = 4}
+DimPlot(neuro_srt, 
+        cols = mycoloursP[10:50], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "Tissue") + NoLegend()
+
+```
+
+```{r, fig.width = 10, fig.hight = 4}
+DimPlot(neuro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "AgeGroup") + NoLegend()
+
+```
+
+```{r, fig.width = 10, fig.hight = 4}
+DimPlot(neuro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "gender") + NoLegend()
+
+```
+
+
+```{r, fig.width = 6, fig.height = 12}
+DimPlot(neuro_srt, 
+        cols = mycoloursP[18:40], 
+        label = TRUE,
+        group.by = "RNA_snn_res.0.7",
+        split.by = "caseNO",
+        ncol = 3) + NoLegend()
+
+```
+
+```{r, fig.width = 10, fig.height=20}
+
+pdf(here(save_dir_neuro, "neurons_clustree.pdf"), 
+    paper="a4", width=8, height=11.5)
+clustree(
+  neuro_srt,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+dev.off()
+
+
+clustree(
+  neuro_srt,
+  prefix = paste0("RNA", "_snn_res."),
+  exprs = c("data", "counts", "scale.data"),
+  assay = NULL
+)
+
+```
+
+# Deciding for the a clustering resolution
+
+I looked for variable genes between all markers and pairwise at resolution 
+0.7, filtered the markers and plotted them in a heat map. I did have a look at
+the cluster QC below at that resolution as well which looked fine. 
+```{r}
+Idents(neuro_srt) <- "RNA_snn_res.0.7"
+  neuro_srt <-  RenameIdents(
+    neuro_srt,
+    "0" = "RELN_1",
+    "1" = "In_1",
+    "2" = "RELN_2",
+    "3" = "RELN_3",
+    "4" = "Ex_1",
+    "5" = "In_2",
+    "6" = "Ex_2",
+    "7" = "Ex_3",
+    "8" = "Ex_4",
+    "9" = "In_3",
+    "10" = "In_4",
+    "11" = "RELN_4",
+    "12" = "In_5",
+    "13" = "In_6",
+    "14" = "In_7",
+    "15" = "Neur",
+    "16" = "In_8",
+    "17" = "In_9")
+  
+# Plot result
+DimPlot(neuro_srt,label = TRUE, repel=TRUE)
+
+DimPlot(neuro_srt,label = TRUE, repel=TRUE, cols = mycoloursP[27:50],
+                  label.size = 4.5)+ NoLegend()
+
+# Save result
+neuro_srt$neurons_clu <- Idents(neuro_srt)
+
+```
+
+```{r}
+DimPlot(neuro_srt,label = FALSE, repel=TRUE, cols = mycoloursP[27:50],
+                  label.size = 4.5)+ NoLegend()
+
+```
+
+Find markers for all interesting resolutions
+```{r}
+int_res_all_mark <- function(seur_obj, 
+                             int_cols,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.6,
+                             avg_log = 1.2,
+                             save_dir = getwd(),
+                             test_use = "MAST"
+                             ){
+  for(i in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[i]
+    all_mark <- FindAllMarkers(seur_obj, 
+                               only.pos = only_pos, 
+                               min.pct = min_pct, 
+                               logfc.threshold = logfc_threshold,
+                               test.use = test_use)
+    fil_mark<- subset(all_mark, 
+                      all_mark$pct.1 > fil_pct_1 & 
+                        all_mark$pct.2 < fil_pct_2 )
+    
+    write.csv(all_mark, paste(save_dir, "/all_mark", int_cols[i], ".csv", sep = "" ))
+    write.csv(fil_mark, paste(save_dir, "/fil_mark", int_cols[i], ".csv", sep = "" ))
+    
+  }
+}
+
+```
+
+
+```{r}
+
+save_dir_neuro <- here("outs",
+                       "neurons",
+                       "cluster_marker_lists")
+```
+
+
+```{r, eval = FALSE}
+
+
+dir.create(save_dir_neuro, recursive = TRUE)
+
+
+
+int_res_all_mark(neuro_srt, 
+                 int_cols = c("RNA_snn_res.0.01",
+                              "RNA_snn_res.0.04",
+                              "RNA_snn_res.0.05",
+                              "RNA_snn_res.0.1",
+                              "RNA_snn_res.0.2",
+                              "RNA_snn_res.0.3",
+                              "RNA_snn_res.0.4",
+                              "RNA_snn_res.0.7",
+                              "RNA_snn_res.0.8",
+                              "neurons_clu"),
+                 save_dir = save_dir_neuro)
+
+
+
+
+
+```
+
+# Pairwise cluster comparison for markers
+
+```{r, eval = FALSE}
+
+
+Idents(neuro_srt) <- "neurons_clu"
+
+clust_id_list_2 <- list(list("RELN_1", "RELN_2"), list("RELN_2", "RELN_1"), 
+                      list("RELN_1", "RELN_3"), list("RELN_3", "RELN_1"),
+                      list("RELN_1", "RELN_4"), list("RELN_4", "RELN_1"), 
+                      list("RELN_2", "RELN_4"), list("RELN_4", "RELN_2"),
+                      list("RELN_3", "RELN_4"), list("RELN_4", "RELN_3"), 
+                      list("RELN_4", "In_6"), list("In_6", "RELN_4"),
+                      list("Ex_2", "Ex_4"), list("Ex_4", "Ex_2"),
+                      list("Ex_2", "Ex_3"), list("Ex_3", "Ex_2"),
+                      list("Ex_3", "Ex_4"), list("Ex_4", "Ex_3"),
+                      list("Ex_3", "Ex_1"), list("Ex_1", "Ex_3"),
+                      list("In_1", "In_2"), list("In_2", "In_1"),
+                      list("In_2", "In_3"), list("In_3", "In_2"),
+                      list("In_1", "In_7"), list("In_7", "In_1"),
+                      list("In_4", "In_5"), list("In_5", "In_4"),
+                      list("In_1", "Neur"), list("Neur", "In_1"),
+                      list("In_4", "Neur"), list("Neur", "In_4"),
+                      list("In_1", "In_8"), list("In_8", "In_1"),
+                      list("In_1", "In_9"), list("In_9", "In_1"),
+                      list("In_5", "In_9"), list("In_9", "In_5"),
+                      list("In_2", "In_9"), list("In_9", "In_2"))
+
+```
+
+
+
+
+
+```{r}
+
+pairwise_mark <- function(seur_obj, 
+                             int_cols,
+                             clust_id_list,
+                             only_pos = TRUE,
+                             min_pct = 0.25,
+                             logfc_threshold = 0.25,
+                             fil_pct_1 = 0.25,
+                             fil_pct_2 = 0.1,
+                             save_dir = getwd(),
+                             test_use = "MAST"){
+  for(k in 1:length(int_cols)){
+    Idents(seur_obj) <- int_cols[k]
+    for(i in 1: length(clust_id_list)){
+      clust_mark <- FindMarkers(seur_obj, 
+                                ident.1 = clust_id_list[[i]][[1]], 
+                                ident.2 = clust_id_list[[i]][[2]],
+                                min.pct = min_pct, 
+                                test.use = test_use)
+      clust_mark$cluster <- clust_id_list[[i]][[1]]
+      clust_mark$comp_to_clust <- clust_id_list[[i]][[2]]
+      write.csv(clust_mark, 
+                paste(save_dir, 
+                      "/", 
+                      int_cols[k],
+                      "_",
+                      clust_id_list[[i]][[1]],
+                      "_",
+                      clust_id_list[[i]][[2]],
+                      ".csv", sep = "" ))
+    }
+  }
+}
+
+
+
+save_dir_neuro_pw <- here("outs",
+                       "neurons",
+                       "pairwise_cluster_marker_lists")
+
+
+
+```
+
+```{r, eval = FALSE}
+
+dir.create(save_dir_neuro_pw, recursive = TRUE)
+
+
+pairwise_mark(neuro_srt, 
+              int_cols = "neurons_clu",
+              save_dir = save_dir_neuro_pw,
+              clust_id_list = clust_id_list_2)
+
+```
+
+Read in data for plotting differentially expressed genes
+```{r}
+
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv")
+  myfiles = lapply(paste(file_dir, temp, sep = "/"), read.csv)
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                       dat$pct.1 > pct_1 & 
+                       dat$pct.2 < pct_2)
+    if(pairwise == TRUE){
+      
+      top10 <- av_log_fil %>% top_n(10, avg_log2FC)
+      top10$gene <- top10$X
+    }else{
+    av_log_fil$cluster <- as.character(av_log_fil$cluster)
+    top10 <- av_log_fil %>% group_by(cluster) %>% 
+      top_n(10, avg_log2FC)
+    }
+    
+    if(i ==1){
+      fil_genes <- top10
+    }else{
+      fil_genes <- rbind(fil_genes, top10)
+    }
+    
+    fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+    
+  }
+  
+  return(fil_genes)
+}
+
+
+fil_genes <- gen_mark_list(file_dir = save_dir_neuro)
+
+fil_genes_pw <- gen_mark_list(file_dir = save_dir_neuro_pw,
+                              pairwise = TRUE)
+
+int_genes <- c(fil_genes$gene, fil_genes_pw$gene)
+int_genes <- unique(int_genes)
+
+
+
+
+```
+
+```{r, fig.height = 25, fig.width=10}
+# every cell name
+
+
+
+Idents(neuro_srt) <- "neurons_clu"
+
+cluster_averages <- AverageExpression(neuro_srt, 
+                                      group.by = "neurons_clu",
+                                      return.seurat = TRUE)
+
+
+cluster_averages@meta.data$cluster <- levels(as.factor(neuro_srt@meta.data$neurons_clu))
+
+order <- c(31, 33, 34, 35, 
+           28, 32, 36, 37, 39, 40, 41, 43, 44, 
+           41, 
+           27, 29, 30, 38)
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "cluster",
+          group.colors = mycoloursP[order],
+          draw.lines = F)
+
+hm_av
+```
+
+```{r}
+pdf(here("outs", "neurons", "cluster_heatmap", "cluster_hm_neurons.pdf"))
+print(hm_av)
+dev.off()
+
+```
+
+```{r}
+
+
+png(here("outs", "neurons", "cluster_heatmap", "cluster_hm_neurons.png"), 
+    width=600, height=2300)
+print(hm_av)
+dev.off()
+
+```
+
+
+# Plot cluster markers
+
+## Excitatory
+```{r, fig.width=10, fig.height=20}
+FeaturePlot(neuro_srt, features = c(
+  "LMO3",
+  "DIRAS2",
+  "NRGN",
+  "CHN1",
+  "ENC1",
+  "SLC17A7",
+  "CAMK2A"
+),ncol = 2)
+
+```
+
+
+
+
+## Inhibitory neurons and RELN positive neurons
+
+```{r, fig.height = 25, fig.width = 12}
+FeaturePlot(neuro_srt,
+            features =c(
+              "PVALB",
+              "GPC5",
+              "CSMD3",
+              "SCG2",
+              "PEG3",
+              "NEFH",
+              "NEFM",
+              "VAMP1",
+              "PVALB",
+              "NXPH1",
+              "GAD1",
+              "GRIK1",
+              "SPOCK3",
+              "ADARB2",
+              "CXCL14",
+              "PRELID2",
+              "FOXP2",
+              "CALB1",
+              "CALB2",
+              "RPL11",
+              "FBXL7",
+              "INPP4B",
+              "CLMP",
+              "AL589740.1",
+              "AC120193.1",
+              "FHIT",
+              "C1QL1",
+              "GPR88",
+              "TIAM1",
+              "FSTL5",
+              "RPL3",
+              "MBP",
+              "PLP1",
+              "MOBP"
+            ),
+            ncol = 3)
+
+```
+
+
+```{r, fig.height = 12, fig.width = 12}
+FeaturePlot(seur_comb,
+            features =c(
+              "NRXN3",
+              "AQP1",
+              "BHLHE40",
+              "HSPB1",
+              "CCDC85A",
+              "APLNR",
+              "TTN",
+              "PLEKHA5",
+              "RNF19A",
+              "AEBP1",
+              "CDC42EP4",
+              "ROBO2"
+            ),
+            ncol = 3)
+
+```
+
+ #neurons
+           "SNAP25",
+           "RBFOX3",
+           #inhibitory
+           "GAD1",
+           "GAD2",
+           #IN_1
+           "GPC5",
+           "PCDH15",
+           "HTR2C",
+           
+           #IN_2
+           "SCG2",
+           "PEG3",
+           "INPP5F",
+           "SLC22A17",
+           "VGF",
+           
+           #IN_3
+           "NEFH",
+           "NEFM",
+           "SPP1",
+           "INA",
+           "VAMP1",
+           "PVALB",
+           
+           #IN_4
+           "SOX6",
+           "NXPH1",
+           "KCNC2",
+           "GRIK1",
+           "SST",
+           
+           #IN_5
+           "CCK",
+           "NPAS3",
+           "ADARB2",
+           "DLX6-AS1",
+           "PRELID2",
+           "CNR1",
+           "FBXL7",
+           
+           #IN_6
+           "INPP4B",
+           "UNC5C",
+           "PHACTR2",
+           "VCAN",
+           "SYN3",
+           
+           #IN_7
+           "NEAT1",
+           "LHFPL3",
+           "NTNG1",
+           "FHIT",
+           
+           #IN_8
+           "TSHZ2",
+           "EBF2",
+           "EBF1",
+           "KIRREL3",
+           
+           #IN_9
+           "LHX6",
+           "SERPINI1",
+           "RAB3B",
+           "TAC1",
+           "NOS1",
+           
+           #excitatory
+           "SLC17A7",
+           
+           #EX_1
+           "ATRNL1",
+           "NECAB1",
+           "KCTD16",
+           
+           #EX_2
+           "HS3ST4",
+           "MGAT4C",
+           "LMO3",
+           "SATB2",
+           "THSD7B",
+           
+           #EX_3
+           "ENC1",
+           "SLC17A7",
+           "ARPP19",
+           
+           #RELN 
+           
+           "RELN",
+           "TIAM1",
+           "CADPS2",
+           "MSRA",
+           "ZNF385D",
+           
+           
+           #RELN_1
+           "SNAP25-AS1",
+          
+           #RELN_2
+           "ERVMER61-1",
+           
+           #RELN_3
+           "RPL3",
+           "RPS27A",
+           "RPL37A",
+           "CHGB",
+           
+           #RELN_4
+           "SST",
+           "CTNNA3",
+           "QKI",
+           "SCD",
+           
+           #Neur
+           "C1QL1",
+           "CRH",
+           "GPR88",
+           "POU4F1",
+           "CALB1",
+           "CALB2" )
+
+
+# Cluster marker plots
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("GPC5", "VGF"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("NEFH", "SOX6"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("PVALB", "SST"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("CCK", "INPP4B"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("NEAT1", "TSHZ2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("LHX6", "CALB1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("ATRNL1", "HS3ST1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("LMO3", "NECAB1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("LMO3", "NECAB1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("ENC1", "ERVMER61-1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(neuro_srt, features = c("SLC17A7", "GAD1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r}
+
+FeaturePlot(neuro_srt, features = c("ARPP19", "SATB2"), order = T, 
+             min.cutoff = "q1",
+             max.cutoff = "q99", blend = T, 
+             cols = c("darkblue", "green", "magenta"), 
+             blend.threshold = 0)  &NoAxes()
+
+```
+
+
+```{r}
+FeaturePlot(neuro_srt, features = c("ARPP19", "THSD7B"), order = T, 
+             min.cutoff = "q1",
+             max.cutoff = "q99", blend = T, 
+             cols = c("darkblue", "green", "magenta"), 
+             blend.threshold = 0)  &NoAxes()
+ 
+```
+
+
+
+# Find tissue markers
+```{r}
+Idents(neuro_srt) <- "Tissue"
+
+tissue_dir <- here("outs",
+                   "neurons",
+                   "tissue_marker_list_neuron")
+
+
+```
+
+
+```{r, eval = FALSE}
+
+
+tissue_markers <- FindAllMarkers(neuro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+dir.create(tissue_dir)
+write.csv(tissue_markers, here(tissue_dir, 
+                               "neuron_tissue_marker.csv"))
+```
+
+
+```{r}
+tissue_markers <- read.csv(here(tissue_dir, 
+                               "neuron_tissue_marker.csv"))
+
+tissue_markers
+
+
+
+```
+
+
+```{r}
+sig_tissue <- subset(tissue_markers, tissue_markers$p_val_adj < 0.05)
+
+top_tissue <- tissue_markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+
+DotPlot(neuro_srt, features = unique(top_tissue$gene), group.by = "Tissue") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+```{r}
+
+#, fig.width = 12, fig.height = 50}
+FeaturePlot(neuro_srt, features = c("NRGN",
+                                    "CAMK2A"),
+            split.by = "Tissue")
+
+
+```
+
+
+
+# Find age  markers
+```{r}
+Idents(neuro_srt) <- "AgeGroup"
+
+age_dir <- here("outs",
+                   "neurons",
+                   "age_marker_list_neuron")
+```
+
+
+```{r, eval = FALSE}
+
+age_markers <- FindAllMarkers(neuro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+
+
+dir.create(age_dir)
+write.csv(age_markers, here(age_dir, 
+                               "neuron_age_marker.csv"))
+
+```
+
+```{r}
+age_markers <- here(age_dir, "neuron_age_marker.csv")
+
+age_markers
+
+
+```
+## More in old:
+
+```{r, fig.width = 12, fig.height = 9}
+FeaturePlot(neuro_srt, features = c("KCNIP4",
+                                    "EPHA6"), 
+            split.by = "AgeGroup")
+
+```
+
+## More in young:
+
+```{r, fig.width = 12, fig.height = 25}
+FeaturePlot(neuro_srt, features = c("RPS27A",
+                                    "RPS23",
+                                    "RPL37A",
+                                    "RPS21",
+                                    "RPL3",
+                                    "RPL21"), split.by = "AgeGroup")
+
+```
+
+
+
+
+# Find sex markers
+```{r}
+Idents(neuro_srt) <- "gender"
+
+sex_dir <- here("outs",
+                   "neurons",
+                   "sex_marker_list_neuron")
+
+```
+
+
+```{r, eval = FALSE}
+sex_markers <- FindAllMarkers(neuro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+sex_markers
+
+dir.create(sex_dir)
+
+write.csv(sex_markers, here(sex_dir,  "neuron_sex_marker.csv"))
+
+```
+
+```{r}
+
+sex_markers <- read.csv(here(sex_dir,  "neuron_sex_marker.csv"))
+sex_markers
+```
+## More in women
+
+```{r, fig.width = 12, fig.height = 18}
+FeaturePlot(neuro_srt, features = c("XIST",
+                                    "PAK3",
+                                    "GRM5",
+                                    "GRM7",
+                                    "DPP10",
+                                    "PRKG1"
+                                    ), 
+            split.by = "gender")
+# first encoded by inactivated X-chromosome
+```
+
+
+## More in men
+
+```{r, fig.width = 12, fig.height = 15}
+FeaturePlot(neuro_srt, features = c("UTY",
+                                    "NLGN4Y",
+                                    "TTTY14",
+                                    "USP9Y",
+                                    "RPL3"
+                                    ), 
+            split.by = "gender")
+# first 2 are encoded on Y-chromosome
+```
+
+# Find markers for age*sex
+
+```{r}
+Idents(neuro_srt) <- "ageSex"
+
+age_sex_dir <- here("outs",
+                   "neurons",
+                   "age_sex_marker_list_neuron")
+
+
+```
+
+
+```{r, eval = FALSE}
+
+
+age_sex_markers <- FindAllMarkers(neuro_srt,
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25, 
+                                 logfc.threshold = 0.25)
+
+
+dir.create(age_sex_dir)
+write.csv(age_sex_markers, here(age_sex_dir, 
+                               "age_sex_neurons_marker.csv"))
+```
+
+
+```{r}
+age_sex_markers <- read.csv(here(age_sex_dir, 
+                               "age_sex_neurons_marker.csv"))
+
+
+age_sex_markers
+
+
+```
+
+
+```{r}
+sig_age_sex <- subset(age_sex_markers, age_sex_markers$p_val_adj < 0.05)
+
+top_age_sex<- sig_age_sex %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+top_age_sex <- top_age_sex %>% arrange(factor(top_age_sex$cluster, levels = c("Old men",
+                                                              "Old women",
+                                                              "Young men",
+                                                              "Young women")))
+  
+neuro_srt$ageSex <- factor(neuro_srt$ageSex, levels = c("Old men",
+                                                        "Old women",
+                                                        "Young men",
+                                                        "Young women"))
+
+Idents(neuro_srt) <- "ageSex"
+
+DotPlot(neuro_srt, features = unique(top_age_sex$gene), group.by = "ageSex") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+# Cluster QC based on resolution 0.7
+
+# Cluster QC
+
+#### Individuals per cluster
+How many individuals contribute to each cluster?
+
+```{r indiv-per-cluster}
+# count how many cells there are in each group and cluster
+sum_caseNO_cluster <- table(neuro_srt$neurons_clu, neuro_srt$caseNO)
+# For each cluster (on the rows) sum of individuals that do have cells on that cluster
+rowSums(sum_caseNO_cluster > 0)
+```
+Nothing stands out except for maybe cluster 9 (but tissues need to be considered
+as well)
+
+#### Percentage of cells that come from each individual
+
+Some of the clusters might be mainly from one person, even though other subjects
+do have some cells that cluster with it. To address this question we calculate
+for each cluster the proportion of cells that come from each caseNO.
+
+```{r prop-per-cluster}
+
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNO_table <- prop.table(sum_caseNO_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNO <- as.data.frame(prop_caseNO_table)
+colnames(prop_caseNO) <- c("cluster", "caseNO", "proportion")
+```
+
+Flag the clusters where one of the individuals covers more than 40% of the
+cluster. The expected would be around `1/20= 5%`
+
+```{r}
+prop_caseNO[prop_caseNO$proportion > 0.4, ]
+```
+
+
+#### Minimum threshold of 2% contribution to count individuals
+Another interesting variable is the number of individuals that contribute to
+more than a certain threshold (15%) to each cluster
+
+```{r min-pct}
+# Calculuate for each cluster the number of individuals that fulfill the condition of contributing more than a 15%
+num_individuals_gt_30pt <- rowSums(prop_caseNO_table > 0.30)
+# Sort the clusters by ascending order of number of individuals that contribute more than 2%
+sort(num_individuals_gt_30pt)
+#And a general overview of the data
+summary(num_individuals_gt_30pt)
+# Save the ones that are formed by less than 8 individuals that fulfill the condition
+clusters_fail <- rownames(prop_caseNO_table)[which(num_individuals_gt_30pt < 8)]
+
+clusters_fail
+```
+
+
+
+Plot the proportions for caseNo
+
+```{r prop-plot}
+# plot a barplot
+
+
+ggplot(data = prop_caseNO, aes(x = cluster, y = proportion, fill = caseNO)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[1:20]) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+It is also worth keeping in mind the size of the cluster, there are in ascending
+order (0 is the biggest cluster and 10 the smallest).
+
+#### Samples instead of individuals
+
+The proportions are again calculated but taking into consideration the samples 
+instead of the individuals
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_caseNOtissue_cluster <- table(neuro_srt$neurons_clu, neuro_srt$process_number)
+# calculate the proportions, for each cluster (margin 1 for rows)
+prop_caseNOtissue_table <- prop.table(sum_caseNOtissue_cluster, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_caseNOtissue <- as.data.frame(prop_caseNOtissue_table)
+colnames(prop_caseNOtissue) <- c("cluster", "process_number", "proportion")
+prop_caseNOtissue[prop_caseNOtissue$proportion > 0.3, ]
+```
+## Conclusion of cluster QC
+
+
+
+
+
+# Compositional differences with age, sex and regions 
+
+Some general distributions about the data. We started with equal number of
+sex/age/tissues but because we deleted samples these are not equal any more.
+Also the number of cells from each one might differ
+
+```{r general}
+# Number of samples per ageSex
+colSums(table(neuro_srt$process_number, neuro_srt$ageSex)>0)
+# Number of samples per tissue
+colSums(table(neuro_srt$process_number, neuro_srt$Tissue)>0)
+# Both things combined (there might be another way of doing this, but it works)#
+colSums(table(neuro_srt$caseNO, neuro_srt$ageSex, neuro_srt$Tissue)>0)
+# Number of nuclei per sexage group
+table(neuro_srt$ageSex)
+
+#number of nuclei per tissue
+table(neuro_srt$Tissue)
+#number of nuclei per age group
+table(neuro_srt$AgeGroup)
+#number of nuclei per sex group
+table(neuro_srt$gender)
+
+# both things combined
+table(neuro_srt$ageSex, neuro_srt$Tissue)
+
+
+```
+
+
+
+## Age and Sex Grouping
+
+Separate by both things in 4 plots. The plots are corrected by number of cells
+per sexage group first (looking at the distribution of each group across
+clusters) and then corrected for the number of cells per cluster (to visualize
+the small and big clusters equally).
+
+```{r, fig.width=12, fig.height=12}
+# Sex
+# DimPlot(nad_ol, split.by = "ageSex", group.by = "Tissue", ncol = 5)
+DimPlot(neuro_srt, split.by = "ageSex", group.by = "neurons_clu", ncol = 2,
+        cols = mycoloursP, pt.size = 2, label = TRUE, label.size = 6)
+```
+
+Calculate proportion clusters for each AgeSex
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_ageSex_cluster <- table(neuro_srt$neurons_clu, neuro_srt$ageSex)
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_ageSex_table_2 <- prop.table(sum_ageSex_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_ageSex_table_2_1 <- prop.table(prop_ageSex_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+
+prop_ageSex <- as.data.frame(prop_ageSex_table_2)
+colnames(prop_ageSex) <- c("cluster", "ageSex", "proportion")
+
+level_list <- c("Young women", "Old women", "Young men", "Old men")
+prop_ageSex$ageSex <- factor(prop_ageSex$ageSex, levels = level_list)
+
+
+# plot a barplot proportion
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+ggplot(data = prop_ageSex, aes(x = cluster, y = proportion, fill = ageSex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[1:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Normalised counts")
+
+
+
+```
+
+Plot the same for Sex and Age separate
+
+```{r}
+# separate the sex and age
+prop_ageSex_sep <- separate(prop_ageSex, 
+                            col = ageSex, 
+                            into = c("age", "sex"), 
+                            sep = " ")
+
+
+
+
+# plot a barplot for the sex
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = sex)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[10:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# And for the age
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(data = prop_ageSex_sep, aes(x = cluster, y = proportion, fill = age)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + scale_fill_manual(values=mycoloursP[15:20]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Tissue
+
+split the clustering by the original tissues
+
+```{r, fig.width=9, fig.height=3}
+Idents(neuro_srt) <- "neurons_clu"
+umap_clusters <- DimPlot(neuro_srt, split.by = "Tissue", 
+                         cols = mycoloursP, pt.size = 2, label = T) +NoLegend()
+umap_clusters
+```
+
+Calculate proportion clusters for each Tissue
+
+```{r}
+# count how many cells there are in each group and cluster
+sum_tissue_cluster <- table(neuro_srt$neurons_clu, neuro_srt$Tissue)
+
+keep <- rowSums(sum_tissue_cluster) > 0
+sum_tissue_cluster <- sum_tissue_cluster[keep,]
+
+# Calculate the proportions for each group: 
+# allows to normalise the groups and give the same weight to all groups, 
+# even though they might have different cell numbers (margin 2 for cols)
+prop_tissue_table_2 <- prop.table(sum_tissue_cluster, margin = 2)
+# calculate the proportions, for each cluster, 
+# allows to visualize on a scale from 0 to 1 (margin 1 for rows)
+prop_tissue_table_2_1 <- prop.table(prop_tissue_table_2, margin = 1)
+# change the format to be a data.frame, this also expands to long formatting
+prop_tissue <- as.data.frame(prop_tissue_table_2)
+colnames(prop_tissue) <- c("cluster", "Tissue", "proportion")
+
+
+#plot
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  ylab("Normalised counts") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+
+ggplot(data = prop_tissue, aes(x = cluster, y = proportion, fill = Tissue)) +
+  geom_bar(position = "fill", stat = "identity") + theme_classic() + 
+  scale_fill_manual(values=mycoloursP[24:40]) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+### tables shown with numbers
+
+To better understand the proportions I show the different steps with tables
+
+```{r}
+sum_ageSex_cluster
+(prop_ageSex_table_2)*100
+prop_ageSex_table_2_1*100
+```
+
+
+
+# Better annotation
+
+```{r}
+
+FeaturePlot(neuro_srt, features = ("TLE4")) 
+# supposed to be specific for layer VI
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("TOX")) 
+# supposed to be specific for layer V/VI
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("RORB")) 
+# supposed to be specific for layer IV
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("HTR2C")) 
+# supposed to be specific a subset of neurons in layer V
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("PCP4")) 
+# supposed to be specific a subset of neurons in layer V
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("CUX2")) 
+# supposed to expressed in superficial layers I/III
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = ("RASGRF2")) 
+# supposed to expressed in superficial layers I/III
+```
+```{r, fig.width = 7, fig.height=7}
+
+FeaturePlot(neuro_srt, features = c("GAD1", "PVALB", "VIP", "SST"), ncol = 2) 
+# parvalbumin positive interneurons, 
+# VIP and SST are negative markers for parvalbumin interneurons
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = "PVALB", split.by = "Tissue")
+
+```
+```{r}
+
+FeaturePlot(neuro_srt, features = "CUX2")
+
+```
+Purkinje cell markers
+
+
+```{r, fig.height = 6, fig.width = 6}
+
+FeaturePlot(neuro_srt, features = c("CALB1" , 
+                                    "ALDOC", 
+                                    "ITPR3", 
+                                    "MAP2", 
+                                    "PCP4", 
+                                    "PCP2", 
+                                    "PVALB", 
+                                    "ITPR1"))
+
+```
+```{r, fig.height = 4, fig.width = 6}
+
+FeaturePlot(neuro_srt, features = c("PCP4",  
+                                    "PVALB"), 
+            split.by = "Tissue")
+
+```
+Markers for basket cells
+```{r, fig.height = 6, fig.width = 6}
+FeaturePlot(neuro_srt, features = c("SORCS3", "ITPR1", "MARCH11", "KIT", "PVALB", "LYPD6"))
+
+
+```
+
+Granule cells
+```{r, fig.height = 5, fig.width = 5}
+FeaturePlot(neuro_srt, features = c("CDH15", "CALB2", "RBFOX3", "RELN"))
+
+```
+
+```{r, fig.height = 3, fig.width = 7}
+
+neuro_srt$neurons_clu <- factor(neuro_srt$neurons_clu, levels = c("RELN_4",
+                                                                  "RELN_3",
+                                                                  "RELN_2",
+                                                                  "RELN_1",
+                                                                  "Neur",
+                                                                  "In_9",
+                                                                  "In_8",
+                                                                  "In_7",
+                                                                  "In_6",
+                                                                  "In_5",
+                                                                  "In_4",
+                                                                  "In_3",
+                                                                  "In_2",
+                                                                  "In_1",
+                                                                  "Ex_4",
+                                                                  "Ex_3",
+                                                                  "Ex_2",
+                                                                  "Ex_1"))
+
+Idents(neuro_srt) <- "neurons_clu"
+
+DotPlot(neuro_srt, features = c(# overall
+                                "SNAP25",
+                                # mature
+                                "MAP2",
+                                "NEFM",
+                                "NEFH",
+                                "SYP",
+                                "DLG4",
+                                # glutamatergic
+                                "SLC17A7", # VGLUT1
+                                "SLC17A6", # VGLUT2
+                                "GRIN1", # NMDAR1
+                                "GRIN2B", # NMDAR2B
+                                "GLS", #glutaminase
+                                "GLUL",
+                                # GABAergic
+                                "SLC6A1", #GABA transporter 1
+                                "GABBR1",
+                                #Purkinje
+                                "ALDOC", 
+                                "ITPR3", 
+                                "PCP4", 
+                                "PCP2", 
+                                "ITPR1",
+                                #Basket cells
+                                "SORCS3", 
+                                "MARCH11",   
+                                "LYPD6",
+                                # excitatory
+                                "CUX2", 
+                                "RORB", 
+                                "TLE4",
+                                "TOX",
+                                "HTR2C",
+                                "RASGRF2",
+                                "THEMIS",
+                                "SEMA3E",
+                                "PDGFD",
+                                "ALDH1L1",
+                                "MME",
+                                "CALB1",
+                                "CNGB1",
+                                "SV2C",
+                                "ADRA1A",
+                                "LINC02196",
+                                "RPRM",
+                                "TMEM233",
+                                "POSTN",
+                                "PCSK5",
+                                # inhibitory below
+                                "GAD1",
+                                "GAD2",
+                                "KIT",
+                                "PVALB",
+                                "SULF1",
+                                "COL15A1",
+                                "NDNF",
+                                "SST",
+                                "VIP",
+                                "SHISA8",
+                                # Granule cells
+                                "CDH15", 
+                                "CALB2", 
+                                "RBFOX3", 
+                                "RELN"
+                                )) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+
+```
+
+
+# Conclusion
+
+
+  
+  
+# Save dataset
+
+```{r, eval = FALSE}
+dir.create(here("data",
+                "single_nuc_data",
+                "neurons"))
+           
+saveRDS(neuro_srt, here("data",
+                        "single_nuc_data",
+                        "neurons",
+                        "HCA_neurons.RDS"))
+
+
+
+
+
+all_mark <- FindAllMarkers(neuro_srt, 
+                               only.pos = TRUE, 
+                               min.pct = 0.25, 
+                               logfc.threshold = 0.4,
+                               test.use = "MAST")
+
+write.csv(all_mark,  here("outs",
+                "neurons",
+                "cluster_marker_lists",
+                "fil_markneurons_clu.csv"))
+```
+
+# Session Info
+
+
+```{r}
+sessionInfo()
+```

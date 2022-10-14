@@ -1,0 +1,258 @@
+---
+title: "Validation_SPARC_Olig2"
+author: "Luise A. Seeker"
+date: "26/05/2021"
+output: html_document
+---
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(webpower)
+library(pracma)
+
+```
+
+
+```{r}
+sparc_data <- read.csv(here("data", 
+                   "validation_data", 
+                   "20220705_variable_classifyer_thresholds_SPARC_RBFOX1_OLIG2.csv"))
+
+```
+
+
+```{r}
+names(sparc_data)
+
+sparc_data$tissue <- as.factor(sparc_data$Tissue)
+sparc_data$age_group <- as.factor(sparc_data$age_group)
+sparc_data$sex <- as.factor(sparc_data$sex)
+
+
+
+sparc_data$total_oligos <- sparc_data$Num_OLIG2 +
+  sparc_data$Num_RBFOX1_OLIG2+
+  sparc_data$Num_SPARC_OLIG2+
+  sparc_data$Num_RBFOX1_SPARC_OLIG2
+
+sparc_data$total_sparc_oligos <- 
+  sparc_data$Num_SPARC_OLIG2+
+  sparc_data$Num_RBFOX1_SPARC_OLIG2
+
+sparc_data$total_sparc_oligos_perc <- (sparc_data$total_sparc_oligos/
+                                         sparc_data$total_oligos) *100
+                                         
+
+sparc_data$perc_sparc_pos_rbfox1_pos_olig2_pos <- sparc_data$Num_RBFOX1_SPARC_OLIG2/
+  sparc_data$total_oligos
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_RBFOX1", 
+                "Num_RBFOX1_OLIG2", 
+                "Num_RBFOX1_SPARC",
+                "Num_RBFOX1_SPARC_OLIG2",
+                "Num_SPARC",
+                "Num_SPARC_OLIG2")
+
+long_data <- gather(sparc_data, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+```{r}
+long_data$valuecol <- as.numeric(long_data$valuecol)
+
+
+red_long <- subset(long_data, 
+                   long_data$keycol %in% c("Num_OLIG2",
+                                           "Num_RBFOX1_OLIG2",
+                                           "Num_RBFOX1_SPARC_OLIG2",
+                                           "Num_SPARC_OLIG2"))
+
+sort_red_long <-  red_long[order(red_long$Tissue),]
+
+ggplot(sort_red_long, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol, 
+                          colour = Tissue)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+ggplot(sort_red_long, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+ggplot(sort_red_long, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+```
+
+
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = perc_sparc_pos_oligos)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("SPARC+OLIG2+RBFOX1-HOECHST+ (%)") + xlab("Tissue")
+
+```
+
+```{r}
+sparc_data$u_id <- paste(sparc_data$sample_id, sparc_data$tissue, sep = "_")
+u_data <- sparc_data[!duplicated(sparc_data$u_id),]
+
+u_data$average_perc_sparc_olig2 <- as.numeric(u_data$average_perc_sparc_olig2)
+
+ggplot(u_data, aes(x = tissue, y = average_perc_sparc_olig2)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("SPARC+OLIG2+HOECHST+ (%)") + xlab("Tissue")
+
+
+
+
+```
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = perc_sparc_pos_oligos)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("SPARC+OLIG2+RBFOX1- as % of OLIG2+") + xlab("Tissue")
+
+```
+
+
+
+
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = perc_sparc_pos_oligos)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw() + ylab("SPARC+OLIG2+RBFOX1-HOECHST+ (%)") + xlab("Tissue")
+
+
+```
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = perc_sparc_pos_oligos)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, aes(colour = donor_id)) +
+  theme_bw() + ylab("SPARC+OLIG2+RBFOX1-HOECHST+ (%)") + xlab("Tissue")
+
+
+```
+
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = total_sparc_oligos_perc)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, aes(colour = donor_id)) +
+  theme_bw() + ylab("SPARC+OLIG2+HOECHST+ (%)") + xlab("Tissue")
+
+
+```
+
+
+```{r}
+ggplot(sparc_data, aes(x = tissue, y = perc_sparc_pos_rbfox1_pos_olig2_pos)) + 
+  geom_boxplot() + 
+  geom_jitter(width = 0.2, aes(colour = donor_id)) +
+  theme_bw() + ylab("SPARC+OLIG2+RBFOX1+HOECHST+ (%)") + xlab("Tissue")
+
+
+```
+
+
+```{r}
+sparc_data$Num_Detections<- as.numeric(sparc_data$Num_Detections)
+mod <- glmer( Num_SPARC_OLIG2 ~ 
+                 tissue + 
+                 Num_Detections +
+                 (1 | u_id)+
+                 (1 | u_fov) , 
+               data = sparc_data, family = poisson(link = "log"))
+summary(mod)
+
+
+```
+
+
+
+```{r}
+
+lm_mod <- lm( Num_SPARC_OLIG2 ~ 
+                 tissue + 
+                 Num_Detections,
+               data = sparc_data)
+summary(lm_mod)
+
+
+
+
+```
+
+```{r}
+sparc_data$cube_rt_perc_sparc_pos_oligos <- pracma::nthroot(sparc_data$perc_sparc_pos_oligos, 3)
+sparc_data$log10_perc_sparc_pos_oligos <- log10(sparc_data$perc_sparc_pos_oligos)
+
+lm_mod <- lm( perc_sparc_pos_oligos ~ 
+                 tissue +
+                age_group * sex,
+               data = sparc_data)
+summary(lm_mod)
+
+
+lm_mod <- lm( cube_rt_perc_sparc_pos_oligos  ~ 
+                 tissue +
+                age_group * sex,
+               data = sparc_data)
+summary(lm_mod)
+AIC(lm_mod)
+```
+```{r}
+red_mod <- lm( cube_rt_perc_sparc_pos_oligos  ~ 
+                 tissue,
+               data = sparc_data)
+AIC(red_mod)
+
+```
+
+```{r}
+
+hist(resid(lm_mod))
+
+shapiro.test(resid(lm_mod))
+
+
+```
+
+
+Is the difference between CB and CSC statistically significant?
+```{r}
+sparc_data$tissue_2 <- ifelse(sparc_data$tissue == "CSC", "A_CSC",
+                               paste(sparc_data$tissue) )
+
+
+lm_mod <- lm( cube_rt_perc_sparc_pos_oligos  ~ 
+                 tissue_2 +
+                age_group * sex,
+               data = sparc_data)
+summary(lm_mod)
+
+```
+
+
+
+```{r}
+sessionInfo()
+
+```

@@ -1,0 +1,422 @@
+---
+title: "09_Marker_gene_expr_test"
+author: "Luise A. Seeker"
+date: "05/02/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library("scales")
+library(RCurl)
+library(AnnotationHub)
+
+
+```
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+```{r}
+
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_seur_norm_raw.RDS")
+
+```
+
+
+Neurons:
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("SNAP25", "STMN2", "RBFOX3", "GABRB2"))
+```
+
+Inhibitory neurons
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("GAD1", "GAD2", "SLC32A1", "PVALB"))
+
+
+
+```
+Add inhibitory neurons
+
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+
+FeaturePlot(seur_comb, features = c("ADARB2", "VIP", "LAMP5", "LHX6"))
+
+
+```
+Add 2 Inhibitory Neurons
+
+```{r, fig.width=7, fig.height=23, fig.fullwidth=TRUE}
+
+FeaturePlot(seur_comb, features = c("LAMA3", "VIP", "TAC3", "RYR3", "TSHZ2",
+                                    "RELN", "IL1RAPL2", "CXCL14", "EYA4",
+                                    "FBXL7", "KIT", "MEIS2", "PBX3", "PLCL1", 
+                                    "MYO5B", "TRHDE", "PLCH1"), 
+            ncol = 2)
+
+
+```
+
+
+Excitatory neurons
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("SATB2", "SLC12A6", "SLC17A7"))
+
+```
+Add exitatory neurons:
+
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+
+FeaturePlot(seur_comb, features = c("FEZF2",
+                                    "RORB", 
+                                    "THEMIS"))
+
+```
+
+Astrocytes
+```{r, fig.width=7, fig.height=15, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("GJA1",
+                                    "AQP4", 
+                                    "GLUL", 
+                                    "SOX9", 
+                                    "NDRG2", 
+                                    "GFAP", 
+                                    "ALDH1A1", 
+                                    "ALDH1L1", 
+                                    "VIM", 
+                                    "APOE", 
+                                    "FGFR3"),
+            ncol = 2)
+
+
+```
+
+Add Astrocytes
+```{r, fig.width=7, fig.height=35, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c( "HPSE2", 
+                                     "TENM2",  
+                                     "ZNF98",
+                                     "CCDC85A", 
+                                     "SLC38A1",
+                                     "GALNT15",
+                                     "BNC2",
+                                     "CFAP299",
+                                     "SPAG17",
+                                     "DTHD1",
+                                     "ADGB",
+                                     "UAP1",
+                                     "SPOCD1",
+                                     "CLCF1",
+                                     "CDH19",
+                                     "SORCS1",
+                                     "SAMHD1",
+                                     "NRGN",
+                                     "CAMK2A",
+                                     "THY1",
+                                     "ENC1",
+                                     "SYT1",
+                                     "CALM3",
+                                     "ST18",
+                                     "CTNNA3",
+                                     "APLNR"))
+            
+         
+
+```
+
+
+Astrocyte markers as described in Zeisel et al. 2018 in the mouse 
+for telencephalon and non-telencephalon astrocytes
+
+
+```{r, fig.width=7, fig.height=13, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c( "AGT", 
+                                     "MFGE8",  
+                                     "SLC6A11",
+                                     "SLC6A9", 
+                                     "GDF10",
+                                     "ISLR",
+                                     "GFAP",
+                                     "AQP4"))
+            
+         
+
+```
+
+Endothelial cells and pericytes
+```{r, fig.width=7, fig.height=10, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c( "CLDN5",   
+                                     "ICAM2",
+                                     "PDGFRB", 
+                                     "NOTCH3", 
+                                     "VWF",
+                                     "FLT1",
+                                     "MECOM"), 
+            ncol = 2)
+            
+         
+
+```
+
+
+
+
+
+
+Stromal
+
+```{r, fig.width=7, fig.height=8, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c( "LAMB1" , 
+                                     "HSPG2", 
+                                     "COL4A1", 
+                                     "FN1", 
+                                     "LAMA2"),
+            ncol = 2)
+
+
+
+
+```
+
+Microglia and macrophages
+```{r, fig.width=7, fig.height=13, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c( "CD74", 
+                                     "SPI1", 
+                                     "MRC1", 
+                                     "TMEM119", 
+                                     "CX3CR1", 
+                                     "AIF1",
+                                     "P2RY12",
+                                     "C1QC",
+                                     "C1QA"),
+            ncol = 2)
+
+
+
+
+```
+Add microglia & macrophages
+
+```{r, fig.width=7, fig.height=13, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("IPCEF1", 
+                                    "NAV3", 
+                                    "NAMPT", 
+                                    "FOSL2",
+                                    "IPCEF1", 
+                                    "NAV3", 
+                                    "IL1RAPL1", 
+                                    "FRMD5",
+                                    "MAGI2"),
+            ncol = 2)
+
+
+
+
+```
+
+
+
+OPCs
+```{r, fig.width=7, fig.height=13, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("PDGFRA", 
+                                    "CSPG4", 
+                                    "GPR17", 
+                                    "PTPRZ1",
+                                    "OLIG1", 
+                                    "OLIG2", 
+                                    "PCDH15", 
+                                    "PTGDS",
+                                    "BCAN"),
+            ncol = 2)
+
+
+
+
+```
+
+Add OPC:
+
+
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("CABLES1", 
+                                    "GFRA1", 
+                                    "LINC01965"), 
+            ncol = 2)
+
+
+```
+Add COP:
+
+
+```{r, fig.width=7, fig.height=18, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("ETV1", 
+                                    "CHST9", 
+                                    "MYT1", 
+                                    "TENM2", 
+                                    "CAMK2A", 
+                                    "KCNQ5", 
+                                    "SEMA5B",
+                                    "SYT1",
+                                    "GPR17",
+                                    "BMPER",
+                                    "EPHB1",
+                                    "ARHGAP24",
+                                    "DOCK8",
+                                    "APBB1IP"), 
+            ncol = 2)
+
+
+```
+
+
+
+Oligodendrocytes
+```{r, fig.width=7, fig.height=10, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("PLP1", 
+                                    "CNP", 
+                                    "MAG", 
+                                    "MOG", 
+                                    "MOBP", 
+                                    "MBP", 
+                                    "SOX10" ), 
+            ncol = 2)
+
+
+```
+
+
+Additional oligodendrocytes
+```{r, fig.width=7, fig.height=18, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("SNAP25", 
+                                    "CNTN1", 
+                                    "FRY", 
+                                    "PLXDC2", 
+                                    "DYSF", 
+                                    "PTPRM", 
+                                    "FOS",
+                                    "VIM",
+                                    "JUNB",
+                                    "AFF3",
+                                    "KANK4",
+                                    "FSTL5",
+                                    "SGCZ",
+                                    "MDGA2"), 
+            ncol = 2)
+
+
+```
+
+
+
+```{r, fig.width=12, fig.height=30, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("SNAP25", 
+                                    "STMN2", 
+                                    "RBFOX3",
+                                    "GABRB2", 
+                                    "GAD1", 
+                                    "GAD2", 
+                                    "SLC32A1", 
+                                    "SATB2", 
+                                    "SLC12A6", 
+                                    "SLC17A7", 
+                                    "GJA1",
+                                    "AQP4", 
+                                    "GLUL", 
+                                    "SOX9", 
+                                    "NDRG2", 
+                                    "GFAP", 
+                                    "ALDH1A1", 
+                                    "ALDH1L1", 
+                                    "VIM",  
+                                    "CLDN5", 
+                                    "VTN",  
+                                    "ICAM2",
+                                    "PDGFRB", 
+                                    "NOTCH3", 
+                                    "CD74", 
+                                    "SPI1", 
+                                    "MRC1", 
+                                    "TMEM119", 
+                                    "CX3CR1", 
+                                    "AIF1", 
+                                    "PDGFRA", 
+                                    "CSPG4", 
+                                    "GPR17", 
+                                    "PTPRZ1",
+                                    "OLIG1", 
+                                    "OLIG2", 
+                                    "PCDH15", 
+                                    "PTGDS", 
+                                    "PLP1", 
+                                    "CNP", 
+                                    "MAG", 
+                                    "MOG", 
+                                    "MOBP",
+                                    "MBP", 
+                                    "SOX10"), 
+            ncol = 4)
+
+
+```
+
+```{r, fig.width=12, fig.height=12, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("SNAP25", 
+                                    "GABRB2",
+                                    "GJA1",
+                                    "AQP4", 
+                                    "CLDN5",
+                                    "ICAM2",
+                                    "PDGFRB", 
+                                    "NOTCH3", 
+                                    "CD74", 
+                                    "AIF1", 
+                                    "PDGFRA", 
+                                    "CSPG4", 
+                                    "GPR17", 
+                                    "PTPRZ1", 
+                                    "PLP1", 
+                                    "CNP"), 
+            ncol = 4)
+
+
+```
+
+
+```{r, fig.width=8, fig.height=6, fig.fullwidth=TRUE}
+
+DimPlot(seur_comb, label = T, cols = mycoloursP)
+
+```
+
+
+
+
+Look for markers previously found interesting in our analyses:
+
+```{r, fig.width=12, fig.height=12, fig.fullwidth=TRUE}
+FeaturePlot(seur_comb, features = c("RBFOX1",
+                                    "SPARC",
+                                    "OPALIN",
+                                    "PAX3",
+                                    "NELL1",
+                                    "KLK6"))
+
+
+```

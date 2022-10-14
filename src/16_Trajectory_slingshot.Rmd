@@ -1,0 +1,535 @@
+---
+title: "HCA_slingshot"
+author: "Luise A. Seeker"
+date: "22/03/2021"
+output: html_document
+---
+
+
+```{r}
+library(ggsci)
+library(slingshot)
+library(BUSpaRse)
+library(tidyverse)
+library(tidymodels)
+library(Seurat)
+library(scales)
+library(viridis)
+library(Matrix)
+library(dplyr)
+library(here)
+
+
+
+```
+# Pick colour pallets
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+```{r}
+nad_ol <- readRDS(here("data", 
+                       "single_nuc_data", 
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+                  
+                  
+
+```
+
+```{r}
+ggplot(nad_ol@meta.data, aes(nCount_RNA, nFeature_RNA, color = ol_clusters_named)) +
+  geom_point(size = 0.5) +
+  scale_color_manual(values = mycoloursP[6:50])+
+  scale_x_log10() +
+  scale_y_log10() +
+  theme_bw() +
+  # Make points larger in legend
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  labs(x = "Total UMI counts", y = "Number of genes detected")
+
+```
+
+
+# Trajectory analysis using SLINGSHOT
+
+
+# Whole dataset
+## Slingshot with start cluster OPC_B (which is only in BA4)
+
+
+```{r}
+sds <- slingshot(Embeddings(nad_ol, "umap"), 
+                 clusterLabels = nad_ol$ol_clusters_named, 
+                 start.clus = "OPC_B", stretch = 0)
+
+
+cl <-nad_ol$ol_clusters_named
+cols <- mycoloursP[6:40]
+
+plot(slingReducedDim(sds), col = cols[cl], pch = 16, cex = 0.5) 
+lines(SlingshotDataSet(sds), lwd = 2, type = 'lineages', col = 'black') 
+```
+
+## Slingshot with start cluster OPC_A (which is only in CB & CSC)
+
+```{r}
+sds_b <- slingshot(Embeddings(nad_ol, "umap"), 
+                 clusterLabels = nad_ol$ol_clusters_named, 
+                 start.clus = "OPC_A", stretch = 0)
+
+plot(slingReducedDim(sds_b), col = cols[cl], pch = 16, cex = 0.5) 
+lines(SlingshotDataSet(sds_b), lwd = 2, type = 'lineages', col = 'black') 
+```
+
+The trajectories of the full dataset are identical, regardless of choosing
+OPC_A or OPC_B as start point
+
+```{r}
+nc <- 3
+pt <- slingPseudotime(sds)
+nms <- colnames(pt)
+nr <- ceiling(length(nms)/nc)
+pal <- viridis(100, end = 0.95)
+par(mfrow = c(nr, nc))
+for (i in nms) {
+  colors <- pal[cut(pt[,i], breaks = 100)]
+  plot(slingReducedDim(sds), col = colors, pch = 16, cex = 0.5, main = i)
+  lines(SlingshotDataSet(sds), lwd = 2, col = 'black', type = 'lineages')
+}
+
+for (i in nms) {
+  colors <- pal[cut(pt[,i], breaks = 100)]
+  plot(slingReducedDim(sds), col = colors, pch = 16, cex = 0.5, main = i)
+  lines(SlingshotDataSet(sds), lwd = 2, col = 'black')
+}
+
+```
+## Differential gene expression along curves
+
+### Get top highly variable genes
+```{r}
+top_hvg <- HVFInfo(nad_ol) %>% 
+  mutate(., bc = rownames(.)) %>% 
+  arrange(desc(variance.standardized)) %>% 
+  top_n(300, variance.standardized) %>% 
+  pull(bc)
+```
+
+### Prepare data for random forest
+```{r}
+dat_use <- t(GetAssayData(nad_ol, slot = "data")[top_hvg,])
+dat_use_df <- cbind(slingPseudotime(sds)[,2], dat_use) # Do curve 2, so 2nd columnn
+colnames(dat_use_df)[1] <- "pseudotime"
+dat_use_df <- as.data.frame(dat_use_df[!is.na(dat_use_df[,1]),])
+```
+
+### use tidymodels
+#### generate training and validation dataset
+```{r}
+set.seed(123)
+dat_split <- initial_split(dat_use_df)
+dat_train <- training(dat_split)
+dat_val <- testing(dat_split)
+
+```
+
+#### train model
+```{r}
+model <- rand_forest(mtry = 200, 
+                     trees = 1400, 
+                     min_n = 15, 
+                     mode = "regression") %>%
+  set_engine("ranger", 
+             importance = "impurity", 
+             num.threads = 3) %>%
+  fit(pseudotime ~ ., data = dat_train)
+
+```
+
+
+#### Evaluate model with validation set
+
+```{r}
+val_results <- dat_val %>% 
+  mutate(estimate = predict(model, .[,-1]) %>% pull()) %>% 
+  dplyr::select(truth = pseudotime, estimate)
+
+```
+
+
+#### Identify top 20 genes
+```{r}
+var_imp <- sort(model$fit$variable.importance, decreasing = TRUE)
+top_genes <- names(var_imp)[1:40]
+
+
+```
+
+
+#### Plot top 40 genes
+```{r, fig.height = 80, fig.width = 6}
+par(mfrow = c(3, 2))
+for (i in seq_along(top_genes)) {
+  colors <- pal[cut(dat_use[,top_genes[i]], breaks = 100)]
+  plot(slingReducedDim(sds), col = colors, 
+       pch = 16, cex = 0.5, main = top_genes[i])
+  lines(SlingshotDataSet(sds), lwd = 2, col = 'black', type = 'lineages')
+}
+
+```
+
+
+
+
+
+# Perform pseudotime analysis separately for each tissue
+
+
+## BA4
+```{r}
+Idents(nad_ol)<-"Tissue"
+ba4<-subset(nad_ol, ident = "BA4")
+
+```
+
+
+
+```{r}
+
+sds_ba4 <- slingshot(Embeddings(ba4, "umap"), 
+                 clusterLabels = ba4$ol_clusters_named, 
+                 start.clus = "OPC_B", stretch = 0)
+
+
+plot(slingReducedDim(sds_ba4), col = cols[cl], pch = 16, cex = 0.5)
+lines(SlingshotDataSet(sds_ba4), lwd = 2, type = 'lineages', col = 'black')
+
+
+
+```
+
+
+
+### Differential gene expression along curves
+
+#### Use random forest
+##### Get top highly variable genes
+```{r}
+top_hvg <- HVFInfo(ba4) %>% 
+  mutate(., bc = rownames(.)) %>% 
+  arrange(desc(variance.standardized)) %>% 
+  top_n(300, variance.standardized) %>% 
+  pull(bc)
+```
+
+##### Prepare data for random forest
+```{r}
+dat_use <- t(GetAssayData(ba4, slot = "data")[top_hvg,])
+dat_use_df <- cbind(slingPseudotime(sds_ba4)[,2], dat_use) # Do curve 2, so 2nd columnn
+colnames(dat_use_df)[1] <- "pseudotime"
+dat_use_df <- as.data.frame(dat_use_df[!is.na(dat_use_df[,1]),])
+```
+
+
+
+
+##### use tidymodels
+###### generate training and validation dataset
+```{r}
+set.seed(123)
+dat_split <- initial_split(dat_use_df)
+dat_train <- training(dat_split)
+dat_val <- testing(dat_split)
+
+```
+
+###### train model
+```{r}
+model <- rand_forest(mtry = 200, 
+                     trees = 1400, 
+                     min_n = 15, 
+                     mode = "regression") %>%
+  set_engine("ranger", 
+             importance = "impurity", 
+             num.threads = 3) %>%
+  fit(pseudotime ~ ., data = dat_train)
+
+```
+
+
+###### Evaluate model with validation set
+
+```{r}
+val_results <- dat_val %>% 
+  mutate(estimate = predict(model, .[,-1]) %>% pull()) %>% 
+  dplyr::select(truth = pseudotime, estimate)
+
+```
+
+
+###### Identify top 20 genes
+```{r}
+var_imp <- sort(model$fit$variable.importance, decreasing = TRUE)
+top_genes <- names(var_imp)[1:20]
+```
+
+
+###### Plot top 20 genes
+```{r, fig.height = 20, fig.width = 6}
+par(mfrow = c(3, 2))
+for (i in seq_along(top_genes)) {
+  colors <- pal[cut(dat_use[,top_genes[i]], breaks = 100)]
+  plot(reducedDim(sds_ba4), col = colors, 
+       pch = 16, cex = 0.5, main = top_genes[i])
+  lines(sds, lwd = 2, col = 'black', type = 'lineages')
+}
+
+```
+
+
+
+
+
+
+
+## CB
+```{r}
+Idents(nad_ol)<-"Tissue"
+cb<-subset(nad_ol, ident = "CB")
+
+```
+
+
+
+```{r}
+
+sds_cb <- slingshot(Embeddings(cb, "umap"), 
+                 clusterLabels = cb$ol_clusters_named, 
+                 start.clus = "OPC_A", stretch = 0)
+
+
+cl_cb <-cb$ol_clusters_named
+cols_cb <- mycoloursP[6:40]
+
+plot(slingReducedDim(sds_cb), col = cols_cb[cl_cb], pch = 16, cex = 0.5)
+lines(SlingshotDataSet(sds_cb), lwd = 2, type = 'lineages', col = 'black')
+
+```
+
+
+
+
+### Differential gene expression along curves
+
+#### Use random forest
+##### Get top highly variable genes
+```{r}
+top_hvg <- HVFInfo(cb) %>% 
+  mutate(., bc = rownames(.)) %>% 
+  arrange(desc(variance.standardized)) %>% 
+  top_n(300, variance.standardized) %>% 
+  pull(bc)
+```
+
+##### Prepare data for random forest
+```{r}
+dat_use <- t(GetAssayData(cb, slot = "data")[top_hvg,])
+dat_use_df <- cbind(slingPseudotime(sds_cb)[,2], dat_use) # Do curve 2, so 2nd columnn
+colnames(dat_use_df)[1] <- "pseudotime"
+dat_use_df <- as.data.frame(dat_use_df[!is.na(dat_use_df[,1]),])
+```
+
+##### use tidymodels
+###### generate training and validation dataset
+```{r}
+set.seed(123)
+dat_split <- initial_split(dat_use_df)
+dat_train <- training(dat_split)
+dat_val <- testing(dat_split)
+
+```
+
+###### train model
+```{r}
+model <- rand_forest(mtry = 200, 
+                     trees = 1400, 
+                     min_n = 15, 
+                     mode = "regression") %>%
+  set_engine("ranger", 
+             importance = "impurity", 
+             num.threads = 3) %>%
+  fit(pseudotime ~ ., data = dat_train)
+
+```
+
+
+###### Evaluate model with validation set
+
+```{r}
+val_results <- dat_val %>% 
+  mutate(estimate = predict(model, .[,-1]) %>% pull()) %>% 
+  dplyr::select(truth = pseudotime, estimate)
+
+```
+
+
+###### Identify top 20 genes
+```{r}
+var_imp <- sort(model$fit$variable.importance, decreasing = TRUE)
+top_genes <- names(var_imp)[1:20]
+```
+
+
+###### Plot top 20 genes
+```{r, fig.height = 20, fig.width = 6}
+par(mfrow = c(3, 2))
+for (i in seq_along(top_genes)) {
+  colors <- pal[cut(dat_use[,top_genes[i]], breaks = 100)]
+  plot(reducedDim(sds_cb), col = colors, 
+       pch = 16, cex = 0.5, main = top_genes[i])
+  lines(sds, lwd = 2, col = 'black', type = 'lineages')
+}
+
+```
+
+
+
+
+
+## CSC
+```{r}
+Idents(nad_ol)<-"Tissue"
+csc<-subset(nad_ol, ident = "CSC")
+
+```
+
+
+
+```{r}
+
+sds_csc <- slingshot(Embeddings(csc, "umap"), 
+                 clusterLabels = csc$ol_clusters_named, 
+                 start.clus = "OPC_A", stretch = 0)
+
+
+cl_csc <-csc$ol_clusters_named
+cols_csc <- mycoloursP[6:40]
+
+plot(slingReducedDim(sds_csc), col = cols_csc[cl_csc], pch = 16, cex = 0.5)
+lines(SlingshotDataSet(sds_csc), lwd = 2, type = 'lineages', col = 'black')
+
+
+```
+
+
+
+
+### Differential gene expression along curves
+
+#### Use random forest
+##### Get top highly variable genes
+```{r}
+top_hvg <- HVFInfo(csc) %>% 
+  mutate(., bc = rownames(.)) %>% 
+  arrange(desc(variance.standardized)) %>% 
+  top_n(300, variance.standardized) %>% 
+  pull(bc)
+```
+
+##### Prepare data for random forest
+```{r}
+dat_use <- t(GetAssayData(csc, slot = "data")[top_hvg,])
+dat_use_df <- cbind(slingPseudotime(sds_csc)[,2], dat_use) # Do curve 2, so 2nd columnn
+colnames(dat_use_df)[1] <- "pseudotime"
+dat_use_df <- as.data.frame(dat_use_df[!is.na(dat_use_df[,1]),])
+```
+
+##### use tidymodels
+###### generate training and validation dataset
+```{r}
+set.seed(123)
+dat_split <- initial_split(dat_use_df)
+dat_train <- training(dat_split)
+dat_val <- testing(dat_split)
+
+```
+
+###### train model
+```{r}
+model <- rand_forest(mtry = 200, 
+                     trees = 1400, 
+                     min_n = 15, 
+                     mode = "regression") %>%
+  set_engine("ranger", 
+             importance = "impurity", 
+             num.threads = 3) %>%
+  fit(pseudotime ~ ., data = dat_train)
+
+```
+
+
+###### Evaluate model with validation set
+
+```{r}
+val_results <- dat_val %>% 
+  mutate(estimate = predict(model, .[,-1]) %>% pull()) %>% 
+  dplyr::select(truth = pseudotime, estimate)
+
+```
+
+
+###### Identify top 20 genes
+```{r}
+var_imp <- sort(model$fit$variable.importance, decreasing = TRUE)
+top_genes <- names(var_imp)[1:20]
+```
+
+
+###### Plot top 20 genes
+```{r, fig.height = 20, fig.width = 6}
+par(mfrow = c(3, 2))
+for (i in seq_along(top_genes)) {
+  colors <- pal[cut(dat_use[,top_genes[i]], breaks = 100)]
+  plot(reducedDim(sds_csc), col = colors, 
+       pch = 16, cex = 0.5, main = top_genes[i])
+  lines(sds, lwd = 2, col = 'black', type = 'lineages')
+}
+
+```
+
+
+
+
+# Save objects
+```{r}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data")
+
+saveRDS(sds, "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data/slingshot_full_data_OPC_B.RDS")
+saveRDS(sds_b, "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data/slingshot_full_data_OPC_A.RDS")
+saveRDS(sds_ba4, "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data/slingshot_BA4.RDS")
+saveRDS(sds_cb, "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data/slingshot_CB.RDS")
+saveRDS(sds_csc, "/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/slingshot_data/slingshot_CSC.RDS")
+
+```
+
+
+# Session info 
+```{r}
+
+sessionInfo()
+```
+
+
+

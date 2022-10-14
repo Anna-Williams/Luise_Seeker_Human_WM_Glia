@@ -1,0 +1,190 @@
+---
+title: "Validation_FMN1_RBFOX1_OLIG2_IF"
+author: "Luise A. Seeker"
+date: "09/08/2022"
+output: html_document
+---
+This is based on only three stainings each of BA4 and CSC tissue. FMN1 staining
+looks very interesting, particularly in the brain where it almost marks tiling
+cells of unclear identity that I think may be microglia based in them mostly 
+being OLIG2 negative and based on the RNAseq data that also marks neurons and 
+microglia as expressing FMN1 but not astrocytes. 
+
+OPCs and COPs also do not express FMN1 which means it may be responsible
+for cytoskeleton reshaping in other situations than myelination (where the 
+Arp2/3 complex is important). Maybe it is important for re-myelinaton?
+So, what I need to do here is to only show that FMN+ olig2+ cells exist which 
+is more tricky than it sounds, because FMN1 is located in processes. 
+
+I first tried with global fluorescence thresholds for nuclear OLIG2, cellular 
+RMFOX1 and cytoplasmic FMN1:
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+fmn1_rbfox1 <- read.csv(here("data", 
+                   "validation_data", 
+                   "20220808_RBFOX1_FMN1_OLIG2_constant_thresholds.csv"))
+
+```
+
+
+```{r}
+names(fmn1_rbfox1)
+
+fmn1_rbfox1$tissue <- as.factor(fmn1_rbfox1$tissue)
+
+fmn1_rbfox1$other_cells <- as.numeric(fmn1_rbfox1$Num_Detections)-(
+  as.numeric(fmn1_rbfox1$Num_FMN1) +
+    as.numeric(fmn1_rbfox1$Num_OLIG2)+
+    as.numeric(fmn1_rbfox1$Num_RBFOX1) +
+    as.numeric(fmn1_rbfox1$Num_OLIG2_FMN1) +
+    as.numeric(fmn1_rbfox1$Num_RBFOX1_FMN1) +
+    as.numeric(fmn1_rbfox1$Num_RBFOX1_OLIG2) +
+    as.numeric(fmn1_rbfox1$Num_RBFOX1_OLIG2_FMN1)
+)
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_FMN1",
+                "Num_OLIG2",
+                "Num_OLIG2_FMN1", 
+                "Num_RBFOX1",
+                "Num_RBFOX1_FMN1",
+                "Num_RBFOX1_OLIG2",
+                "Num_RBFOX1_OLIG2_FMN1",
+                "other_cells")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+Oligodendrocytes only
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_OLIG2",
+                "Num_OLIG2_FMN1", 
+                "Num_RBFOX1_OLIG2",
+                "Num_RBFOX1_OLIG2_FMN1")
+
+long_data <- gather(fmn1_rbfox1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+```{r}
+
+fmn1_rbfox1$Num_RBFOX1_OLIG2_FMN1 <- as.numeric(fmn1_rbfox1$Num_RBFOX1_OLIG2_FMN1)
+
+fmn1_rbfox1$perc_triple_pos_olig <- (fmn1_rbfox1$Num_RBFOX1_OLIG2_FMN1/(
+  fmn1_rbfox1$Num_OLIG2+
+    fmn1_rbfox1$Num_OLIG2_FMN1+
+    fmn1_rbfox1$Num_RBFOX1_OLIG2))*100
+
+
+
+ggplot(fmn1_rbfox1, aes(x = tissue, y = perc_triple_pos_olig)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("FMN1+ RBFOX1+ OLIG2+ (%)") + xlab("Tissue")
+
+
+ggplot(fmn1_rbfox1, aes(x = tissue, y = Num_RBFOX1_OLIG2_FMN1)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("FMN1+ RBFOX1+ OLIG2+") + xlab("Tissue")
+
+
+
+
+```
+
+
+
+
+Conclusion:
+Based in the very variable number of unclassified cells and classified cells
+per sample, I believe the global thresholds are again not working very well in 
+this context and sample specific thresholds or manual classification
+need to be used. 
+
+```{r}
+sessionInfo()
+
+```

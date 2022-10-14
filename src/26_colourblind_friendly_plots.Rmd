@@ -1,0 +1,182 @@
+---
+title: "Colourblind friendly plots"
+author: "Luise A. Seeker"
+date: "11/05/2021"
+output: html_document
+---
+# Introduction
+It is challenging to plot data of whole single cell RNA seq experiments, because
+often many clusters are found and it is challenging to find colour palettes
+that offer enough vlaues to allow separation of all clusters. Even more 
+challenging is it to stick to colourblind-friendly palettes, because they 
+usually only contain a few colours. 
+
+Below, I am attempting to re-plot some of the Feature and umap plots in a 
+colourblind-friendly way.
+
+
+
+# Preparations
+## Load libraries
+```{r}
+library(Seurat)
+library(ggplot2)
+library(colorBlindness)
+library(reshape2)
+library(here)
+
+```
+
+
+## Loaad data
+```{r}
+nad_ol <- readRDS(here("data",
+                       "single_nuc_data",
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+
+```
+
+
+## Prepare colour palette
+```{r, fig.width = 8, fig.height = 6}
+mat <- matrix(1:81, nrow = 9, ncol = 9)
+mat1 <- melt(t(mat[9:1, ]))
+len <- length(Blue2DarkRed12Steps)-1
+mat1$v2 <- cut(mat1$value,
+              breaks = seq(0,ceiling(81/len)*len, 
+                           length.out = len+1))
+ht <- ggplot(mat1) + 
+  geom_tile(aes(x=Var1, y=Var2, fill=v2)) + 
+  scale_fill_manual(values=Blue2DarkRed12Steps) + 
+  theme_bw()
+# check the plot by CVD simulator
+cvdPlot(ht)
+
+
+```
+
+```{r}
+Blue2DarkRed12Steps
+
+```
+
+
+# Plot Feature Plots
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "OPALIN"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("OPALIN", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("AFF3", "LGALS1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+
+FeaturePlot(nad_ol, features = c("AFF3", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("RBFOX1", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("SPARC", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("SLC22A3", "PAX3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "MPZ","PMP2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("#AAF7FF", "#A50021", "#290AD8"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+The base colours above should be colour-blind, friendly, but I am not so sure
+about the blended colours.
+
+```{r}
+
+DimPlot(nad_ol, group.by = "ol_clusters_named", cols = Blue2DarkRed12Steps,
+        label = T)
+
+
+
+```
+
+```{r, fig.width = 10, fig.height = 3}
+
+DimPlot(nad_ol, group.by = "ol_clusters_named", cols = Blue2DarkRed12Steps,
+        split.by = "Tissue",
+        label = T,
+        pt.size = 1)
+
+
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+```

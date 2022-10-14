@@ -1,0 +1,213 @@
+---
+title: "2021_CombinedAnAllCells"
+author: "Luise A. Seeker"
+date: "19/01/2021"
+output: html_document
+---
+
+# Analysis pipeline for HCA project
+- data was previously filtered using scater
+- data was normalised using scran. Spliced and unspliced data was normalised together. 
+- normalisation was performed for each tissue separately
+
+# Objectives of this script are to
+- combine tissues to a single SCE dataset
+- to add doublet scores
+- transform dataset to a Seurat dataset that included raw and normalised data
+
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library("scales")
+library(SingleCellExperiment)
+library(BiocSingular)
+library(scDblFinder)
+library(scran)
+library(scater)
+library(RCurl)
+library(AnnotationHub)
+
+
+```
+
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+Set working directory and read in file
+
+```{r}
+norm_ba4<-readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/BA4/BA4_sce_fil_norm.RDS")
+norm_cb<-readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/CB/CB_sce_fil_norm.RDS")
+norm_csc<-readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/CSC/CSC_sce_fil_norm.RDS")
+
+combined_sce <- cbind(norm_ba4, norm_cb, norm_csc)
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE")
+```
+
+
+Bioconductor offers packages that help identifying doublets in a dataset. 
+We use scDblFinder which simuated doublets by randomly mixing the transcription
+profile of cells in a dataset and then compares real samples to those simulated
+ones. I like this method, because it allocated doublet scores to cells not 
+clusters and therefore those scored remain if the clustering is changed. 
+
+For more information look here:
+https://bioconductor.org/packages/devel/bioc/vignettes/scDblFinder/inst/doc/2_scDblFinder.html
+https://github.com/plger/scDblFinder
+
+
+
+I tested the scDblFinder algorithm with and without running a dimensional 
+reduction first and the results look very similar to me. Here the SCE dataset
+is processed to add the PCA dimensional reduction which will be used if present.
+Because this is so close to visualising the dataset, I do this here, too. 
+```{r}
+
+# model variance and select top 10% most variable genes
+set.seed(1001)
+dec_sce <- modelGeneVarByPoisson(combined_sce)
+top_genes <- getTopHVGs(dec_sce, prop=0.1)
+
+set.seed(10000)
+combined_sce <- denoisePCA(combined_sce, 
+                           subset.row=top_genes, 
+                           technical=dec_sce)
+
+set.seed(100000)
+combined_sce <- runTSNE(combined_sce, 
+                        dimred="PCA",
+                        pca = 25)
+
+
+#Clustering
+
+g <- buildSNNGraph(combined_sce, k=10, use.dimred = 'PCA')
+clust <- igraph::cluster_walktrap(g)$membership
+colLabels(combined_sce) <- factor(clust)
+
+table(colLabels(combined_sce))
+
+plotTSNE(combined_sce, colour_by="label")
+
+
+```
+
+Ideally, scDblFinder should be performed after empty droplets are removed and
+before further filtering is performed. But on the other hand the authors say 
+that it works with normalised data and with dimensional reduced data which 
+are steps that are usually performed after QC. 
+
+It does not make sense that doublets form between samples that are run on 
+different chip. Therefore we specify a sample identifier and the algorithm 
+first runs within sample. 
+
+```{r}
+set.seed(100)
+
+combined_sce <- scDblFinder(combined_sce, samples="ProcessNumber")
+table(combined_sce$scDblFinder.class)
+
+```
+```{r}
+
+plotTSNE(combined_sce, colour_by = "scDblFinder.score")
+
+
+```
+
+```{r}
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE")
+
+saveRDS(combined_sce,"/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_SCE_norm_raw.RDS")
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/doublet_score_file")
+write.csv(as.data.frame(colData(combined_sce)),"/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/doublet_score_file/HCAC_doubletscore.csv")
+
+
+
+```
+
+
+
+Then combine all three datasets to a single one.
+
+check that raw data is saved in seurat@assays$RNA@counts an log normalised
+data is saved in seurat@assays$RNA@data. Raw data can be recognised as 
+integers, whereas log normalised counts show decimal numbers.
+
+```{r}
+ba4_seurat <- as.Seurat(norm_ba4)
+cb_seurat <- as.Seurat(norm_cb)
+csc_seurat <- as.Seurat(norm_csc)
+
+
+ba4_seurat@meta.data$Tissue <- "BA4"
+cb_seurat@meta.data$Tissue <- "CB"
+csc_seurat@meta.data$Tissue <- "CSC"
+
+
+seur_comb <- merge(ba4_seurat, y = c(cb_seurat, csc_seurat), 
+                      add.cell.ids = c("BA4", "CB", "CSC"), 
+                      project = "HCA_all_celltypes")
+
+
+# check if cell order of seurat and sce objects are the same
+summary(seur_comb$Barcode == combined_sce$Barcode)
+
+# if they are all true continue
+
+
+seur_comb$scDblFinder_weighted <- combined_sce$scDblFinder.weighted
+seur_comb$scDblFinder_ratio <- combined_sce$scDblFinder.ratio
+seur_comb$scDblFinder_class <- combined_sce$scDblFinder.class
+seur_comb$scDblFinder_score <- combined_sce$scDblFinder.score
+
+remove(combined_sce)
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_Seurat")
+saveRDS(seur_comb,"/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_seur_norm_raw.RDS")
+
+```
+
+```{r}
+sessionInfo()
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

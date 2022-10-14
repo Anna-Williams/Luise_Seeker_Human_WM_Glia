@@ -1,0 +1,259 @@
+---
+title: "Validation of PAX3 and PDGFRA positive OPCs in BA4, CB and CSC"
+author: "Luise A. Seeker"
+date: "15/04/2022"
+output: html_document
+---
+
+# Background
+
+Six BA4 samples and seven CSC and five CB samples were stained using basescope duplex
+kits (ACD) and a PDGFRA probe in C1 (blue) and a custom Pax3 probe in C2 (red). 
+Qupath was used to select regions of interest with (squares with 500 micrometres 
+side lengths) which were saved separately as .tif files. File names were 
+blinded and evaluated in qupath in random order. 
+
+One BA4 sample (SD042/18) was of poor quality and was removed. For one CSC
+sample, only three fields of view could be selected and the sample is of inferior 
+quality (SD024/14).
+
+A cell had to have at least three blue dots to be counted as PDGFRA positive 
+OPC, because other cells can express PDGFRA as well (Pericytes) and because
+PAX3 expression is sparse and detecting it where a cell is cut trough its middle
+is more convincing than where it is cut throught the tip of a process for example.
+
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+```
+
+
+```{r}
+pax3_data <- read.csv(here("data", 
+                   "validation_data", 
+                   "Pax3_PDGFRA_basescope_dupl_data.csv" ))
+
+```
+
+
+```{r}
+names(pax3_data)
+
+pax3_data$donor_tissue <- paste(pax3_data$donor_id, 
+                                pax3_data$tissue,
+                                sep = "_")
+
+pax3_data$tissue <- as.factor(pax3_data$tissue)
+
+pax3_data$pc_pax3_pos_opcs <- (pax3_data$double_pos/
+  (pax3_data$double_pos + pax3_data$PDGFRA_pos)) *100 
+
+
+```
+
+
+```{r}
+ggplot(pax3_data, aes(x = tissue, y = pc_pax3_pos_opcs)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = donor_tissue)) +
+  theme_bw(19) + ylab("PAX3+PDGFRA+ (%)") + xlab("Tissue")
+
+```
+
+```{r}
+ggplot(pax3_data, aes(x = tissue, y = pc_pax3_pos_opcs)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = Tissue_mod)) +
+  theme_bw(19) + ylab("PAX3+PDGFRA+ (%)") + xlab("Tissue")
+
+```
+
+
+
+
+```{r}
+
+mod <- glmer( double_pos ~ 
+                PDGFRA_pos+
+                tissue + 
+                Tissue_mod + 
+                (1| donor_tissue), 
+               data = pax3_data, family = poisson(link = "log"))
+summary(mod)
+
+anova(mod)
+```
+```{r}
+
+mod_int <- glmer( double_pos ~ 
+                PDGFRA_pos+
+                tissue *  Tissue_mod + 
+                (1| donor_tissue), 
+               data = pax3_data, family = poisson(link = "log"))
+summary(mod_int)
+
+anova(mod_int)
+```
+
+
+```{r}
+mod_2 <- glmer( double_pos ~ 
+                PDGFRA_pos+
+                tissue +  
+                (1| donor_tissue), 
+               data = pax3_data, family = poisson(link = "log"))
+summary(mod_2)
+
+anova(mod_2)
+
+AIC(mod_2)
+
+
+
+```
+
+
+```{r}
+mod_3 <- glm(double_pos ~ 
+                PDGFRA_pos+
+                tissue, 
+               data = pax3_data, family = poisson(link = "log"))
+summary(mod_3)
+
+anova(mod_2, mod_3)
+
+
+
+```
+# Subset for white matter only
+
+```{r}
+wm_dat <- subset(pax3_data, pax3_data$tissue_region == "WM")
+
+ggplot(wm_dat, aes(x = tissue, y = pc_pax3_pos_opcs)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = donor_tissue)) +
+  theme_bw(19) + ylab("PAX3+PDGFRA+ as % of PDGFRA+)") + xlab("Tissue")
+
+
+```
+
+
+
+```{r}
+names(pax3_data)
+
+pax3_data$tissue <- as.factor(pax3_data$tissue)
+
+
+pax3_data$sample_id <- pax3_data$donor_tissue
+
+
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("PDGFRA_pos",
+                "PAX3_pos", 
+                "double_pos")
+
+long_data <- gather(pax3_data, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+long_data$sample_id <- factor(long_data$sample_id, levels =
+                                c("SD008_18_BA4", 
+                                  "SD012_15_BA4",
+                                  "SD021_17_BA4",
+                                  "SD031_14_BA4",
+                                  "SD038_15_BA4",
+                                  "SD004_12_CB",
+                                  "SD011_18_CB",
+                                  "SD031_14_CB",
+                                  "SD035_15_CB",
+                                  "SD046_17_CB",
+                                  "SD012_15_CSC",# is that a typo?
+                                  "SD015_12_CSC", # is that a typo?
+                                  "SD022_13_CSC",
+                                  "SD024_14_CSC",
+                                  "SD026_16_CSC",
+                                  "SD030_12_CSC",
+                                  "SD039_14_CSC"
+                                  ))
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol, 
+                          colour = tissue)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:30])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:30])
+
+
+```
+```{r}
+
+
+long_data$staining <- "PAX3_PDGFRA"
+
+ggplot(long_data, aes(x = staining , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[15:30])
+
+pax3_subs_long <- subset(long_data, long_data$keycol != "PAX3_pos")
+
+ggplot(pax3_subs_long, aes(x = staining , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[16:30])
+```
+
+
+# Results
+
+Basescope staining confirms that there are statistically significantly more PAX3
+positive OPCs in the Spinal cord and cerebellum than in the WM underlying the 
+primary motor cortex (BA4). 
+
+I also tested an interaction between anatomical (BA4, CB, CSC) and histological 
+(GM vs. WM) tissue region and found that in BA4 there are statistically 
+significanlty more PAX3 positive OPCs in the grey matter (which were not included
+in the snRNAseq part of the experiment), in CB there is no significant difference
+between GM and WM but in CSC there are more PAX3 positive OPCs in the WM. 
+
+I fitted donot_tissue as random effect to account for donor variability but also 
+sample quality which seems to improve the model fit compared to a linear
+model without random effects. 
+
+```{r}
+
+sessionInfo()
+```

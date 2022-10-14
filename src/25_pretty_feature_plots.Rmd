@@ -1,0 +1,213 @@
+---
+title: "HCA Merged Feature Plots"
+author: "Luise A. Seeker"
+date: "11/05/2021"
+output: html_document
+---
+
+```{r}
+library(here)
+library(ggplot2)
+library(Seurat)
+
+
+
+```
+
+
+
+# Loaad data
+```{r}
+nad_ol <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs_LS.RDS")
+
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("RBFOX1", "OPALIN"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0) &DarkTheme() &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "OPALIN"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("RBFOX1", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("OPALIN", "SPARC"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("AFF3", "LGALS1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0,
+            pt.size = 1)  &NoAxes()
+```
+```{r, fig.width = 8, fig.height = 2}
+
+FeaturePlot(nad_ol, features = c("PAX3", "NELL1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0,
+            pt.size = 1)  &NoAxes()
+```
+
+```{r, fig.width = 8, fig.height = 2}
+
+
+FeaturePlot(nad_ol, features = c("AFF3", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("RBFOX1", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0,
+            pt.size = 1)  &NoAxes()
+```
+
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("SPARC", "FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c("SLC22A3", "PAX3"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "MPZ","PMP2"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+The SPARC positive cluster Oligo_F expresses Peripheral Myelin Protein 2, but not Myelin Protein Zero. 
+Both are expressed by Schwann cells. So, maybe Oligo_F is "schwannoid", but I am sure
+they are not Schwann cells.
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "PDGFRA","GPR17"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "SOX6","RTN4"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "SOX6","GPR17"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "SOX6","PDGFRA"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+
+```{r, fig.width = 8, fig.height = 2}
+VlnPlot(nad_ol, features = c( "SOX6","RTN4"))
+
+```
+```{r, fig.width = 8, fig.height = 2}
+FeaturePlot(nad_ol, features = c( "PLP1","PDGFRA"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+
+```
+
+```{r}
+
+FeaturePlot(nad_ol, features = c( "PLXDC2","RASGRF1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+```{r}
+
+FeaturePlot(nad_ol, features = c( "LAMA2","FMN1"), order = T, 
+            min.cutoff = "q1",
+            max.cutoff = "q99", blend = T, 
+            cols = c("darkblue", "green", "magenta"), 
+            blend.threshold = 0)  &NoAxes()
+
+```
+
+
+# Session Info
+```{r}
+sessionInfo()
+
+```

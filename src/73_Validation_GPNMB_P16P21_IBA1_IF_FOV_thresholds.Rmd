@@ -1,0 +1,387 @@
+---
+title: "Validation_gpnmb_p1621_iba1_OLIG2_IF"
+author: "Luise A. Seeker"
+date: "09/08/2022"
+output: html_document
+---
+HCN2 SPARC and OLIG2 co-labelling in 3 BA4 and 2 CSC samples
+
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+library(Seurat)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+
+
+```{r}
+gpnmb_p1621_iba1 <- read.csv(here("data", 
+                   "validation_data", 
+                   "20220820_GPNMB_P16_P21_IBA1_FOV_thresholds_quant.csv"))
+
+```
+
+
+```{r}
+names(gpnmb_p1621_iba1)
+
+gpnmb_p1621_iba1$tissue <- as.factor(gpnmb_p1621_iba1$tissue)
+
+
+gpnmb_p1621_iba1$sample_id <- factor(gpnmb_p1621_iba1$sample_id,
+                                     levels = c("SD008_18_BA4",
+                                                "SD021_17_BA4",
+                                                "SD042_18_BA4",
+                                                "SD015_12_CB",
+                                                "SD030_12_CB",
+                                                "SD039_14_CB",
+                                                "SD015_12_CSC",
+                                                "SD042_10_CSC"))
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_Detections",
+                "Num_GPNMB",
+                "Num_GPNMB_IBA1", 
+                "Num_GPNMB_IBA1_P16P21",
+                "Num_GPNMB_P16P21",
+                "Num_IBA1",
+                "Num_P16P21",
+                "Num_P16P21_IBA1")
+
+long_data <- gather(gpnmb_p1621_iba1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+Remove cells that are negative for all tested markers:
+
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_GPNMB",
+                "Num_GPNMB_IBA1", 
+                "Num_GPNMB_IBA1_P16P21",
+                "Num_GPNMB_P16P21",
+                "Num_IBA1",
+                "Num_P16P21",
+                "Num_P16P21_IBA1")
+
+long_data <- gather(gpnmb_p1621_iba1, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+```
+
+
+Exclude cells that are not positive for OLIG2
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("Num_GPNMB_IBA1", 
+                "Num_GPNMB_IBA1_P16P21",
+                "Num_IBA1",
+                "Num_P16P21_IBA1")
+
+long_data <- gather(gpnmb_p1621_iba1, keycol, valuecol, gathercols)
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+collapse tissue
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("sum_GPNMB_neg_IBA1_Pos",
+                "sum_GPNMB_IBA1")
+
+long_data <- gather(gpnmb_p1621_iba1, keycol, valuecol, gathercols)
+
+long_data$keycol <- factor(long_data$keycol, levels = c("sum_GPNMB_neg_IBA1_Pos",
+                                                        "sum_GPNMB_IBA1"))
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+```{r}
+
+ggplot(long_data, aes(x = tissue , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:50])
+
+
+
+
+
+ggplot(long_data, aes(x = tissue, 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[25:50])
+
+
+```
+```{r}
+ggplot(gpnmb_p1621_iba1, aes(x = tissue, y = GPNMB_perc_IBA1)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = sample_id)) +
+  theme_bw(19) + ylab("GPNMB+IBA1+HOECHST+ (%)") + xlab("Tissue")
+
+```
+
+
+
+
+```{r}
+
+lm_prot <- lm(gpnmb_p1621_iba1$GPNMB_perc_IBA1~ gpnmb_p1621_iba1$tissue)
+summary(lm_prot)
+anova(lm_prot)
+```
+
+```{r}
+
+ti_csc <- subset(gpnmb_p1621_iba1, gpnmb_p1621_iba1$tissue == "CSC")
+ti_cb <- subset(gpnmb_p1621_iba1, gpnmb_p1621_iba1$tissue == "CB")
+ti_ba4 <- subset(gpnmb_p1621_iba1, gpnmb_p1621_iba1$tissue == "BA4")
+
+t.test(ti_csc$GPNMB_perc_IBA1, ti_cb$GPNMB_perc_IBA1)
+t.test(ti_csc$GPNMB_perc_IBA1, ti_ba4$GPNMB_perc_IBA1)
+t.test(ti_cb$GPNMB_perc_IBA1, ti_ba4$GPNMB_perc_IBA1)
+```
+
+
+```{r}
+summary(gpnmb_p1621_iba1$GPNMB_perc_IBA1)
+```
+
+```{r}
+micro_srt <-  readRDS(here("data", 
+                           "single_nuc_data", 
+                           "microglia",
+                           "HCA_microglia.RDS"))
+
+Idents(micro_srt) <- "microglia_clu"
+
+micro_srt <- subset(micro_srt, idents = c("Microglia_1",
+                                    "Microglia_2",
+                                    "Microglia_3",
+                                    "Microglia_4",
+                                    "Microglia_5",
+                                    "BAM"))
+
+
+
+Idents(micro_srt) <- "Tissue"
+
+csc_srt <- subset(micro_srt, idents = "CSC")
+cb_srt <- subset(micro_srt, idents = "CB")
+ba4_srt <- subset(micro_srt, idents = "BA4")
+
+cd_genes <- c("GPNMB")
+
+
+a_csc <- DotPlot(object = csc_srt, features = cd_genes)
+a_csc$data
+mean(a_csc$data$pct.exp)
+
+
+a_cb <- DotPlot(object = cb_srt, features = cd_genes)
+a_cb$data
+mean(a_cb$data$pct.exp)
+
+a_ba4 <- DotPlot(object = ba4_srt, features = cd_genes)
+a_ba4$data
+mean(a_ba4$data$pct.exp)
+
+
+df <- data.frame(modality = rep(c("GPNMB_neg", "GPNMB_pos"),3), 
+                 tissue = c("BA4", "BA4", "CB", "CB", "CSC", "CSC"),
+                 percentage = c(100- mean(a_ba4$data$pct.exp),
+                                mean(a_ba4$data$pct.exp), 
+                                100- mean(a_cb$data$pct.exp),
+                                mean(a_cb$data$pct.exp), 
+                                100- mean(a_csc$data$pct.exp),
+                                mean(a_csc$data$pct.exp)))
+
+
+
+ggplot(df, aes(x = tissue, y=percentage, fill = modality))+
+  geom_bar(stat="identity")+scale_fill_manual(values= mycoloursP[25:50])
+
+```
+```{r}
+Idents(csc_srt) <- "process_number"
+a_csc_s <- DotPlot(object = csc_srt, features = cd_genes)
+a_csc_s$data
+mean(a_csc_s$data$pct.exp)
+a_csc_s$data$Tissue <- "CSC"
+
+Idents(cb_srt) <- "process_number"
+a_cb_s <- DotPlot(object = cb_srt, features = cd_genes)
+a_cb_s$data
+mean(a_cb_s$data$pct.exp)
+a_cb_s$data$Tissue <- "CB"
+
+Idents(ba4_srt) <- "process_number"
+a_ba4_s <- DotPlot(object = ba4_srt, features = cd_genes)
+a_ba4_s$data
+mean(a_ba4_s$data$pct.exp)
+a_ba4_s$data$Tissue <- "BA4"
+
+b_data <- rbind(a_csc_s$data, 
+                a_cb_s$data,
+                a_ba4_s$data)
+
+```
+
+```{r}
+ggplot(b_data, aes(x = Tissue, y = pct.exp)) +
+  geom_boxplot()+ geom_jitter(width = 0.2, aes(colour = id)) +
+  theme_bw(19) + ylab("GPNMB+ (%)") + xlab("Tissue")
+
+```
+
+```{r}
+lm_rna <- lm(b_data$pct.exp~ b_data$Tissue)
+summary(lm_rna)
+anova(lm_rna)
+```
+
+
+Conclusion:
+I found that automatically counting FMN1 positive cells lead to a large variation, 
+and hoped manual counting would alleviate this. But I still observe a lot of
+variation among samples. The FMN1 validation is tricky, because it is 
+expressed in processes and it is sometimes difficult to decide if a process
+belongs to a cell or merely touches it. I think what I can say is that a subset
+of oligodendrocytes do express FMN1 and that differences in their percentage 
+between snRNAseq and IF may be due to technical differences, sample differences
+or inaccuracy in quantifying IF images due to FMN1 being expressed in processes. 
+It was particularly difficult to quantify in Spinal cord due to staining of background structures (ECM/ cytoskelleton).
+
+```{r}
+sessionInfo()
+
+```

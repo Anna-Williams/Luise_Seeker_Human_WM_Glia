@@ -1,0 +1,679 @@
+---
+title: "07_Dim_red_Rough_annot"
+author: "Luise A. Seeker"
+date: "05/02/2021"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ggsci)
+library("scales")
+library(SingleCellExperiment)
+library(BiocSingular)
+library(scDblFinder)
+library(scran)
+library(scater)
+library(RCurl)
+library(AnnotationHub)
+
+
+```
+
+Pick colour paletts
+
+```{r}
+
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+```{r}
+
+seur_comb <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/04_scran_normalised/combined_SCE/combined_seur_norm_raw.RDS")
+
+```
+
+
+
+#the dataset has been normalised before, so it is not notmalised again. Instead, variable features are searched:
+```{r}
+seur_comb <- FindVariableFeatures(seur_comb, selection.method = "vst", 
+                                  nfeatures = 2000)
+```
+
+
+# Identify the 10 most highly variable genes
+```{r}
+top10 <- head(VariableFeatures(seur_comb), 10)
+
+```
+
+# plot variable features with and without labels
+```{r, fig.width=10, fig.height=5, fig.fullwidth=TRUE}
+plotA <- VariableFeaturePlot(seur_comb, cols = mycoloursP[4:5])
+plotB <- LabelPoints(plot = plotA, points = top10, repel = TRUE)
+plotA + plotB
+```
+
+#scale all genes (if there is a batch effect I could add vars to regress here)
+```{r}
+all_genes <- rownames(seur_comb)
+seur_comb <- ScaleData(seur_comb, features = all_genes)
+```
+
+#linear dimensional reduction
+```{r}
+seur_comb <- RunPCA(seur_comb, features = VariableFeatures(object = seur_comb), 
+                    npcs = 100)
+```
+
+#visualise
+```{r, fig.width=10, fig.height=8, fig.fullwidth=TRUE}
+VizDimLoadings(seur_comb, dims = 1:2, reduction = "pca")
+```
+
+```{r}
+DimPlot(seur_comb, reduction = "pca", cols= mycoloursP[22:40])
+```
+
+```{r}
+DimHeatmap(seur_comb, dims = 1, cells = 500, balanced = TRUE)
+```
+
+```{r, fig.width=10, fig.height=55, fig.fullwidth=TRUE}
+DimHeatmap(seur_comb, dims = 1:50, cells = 500, balanced = TRUE)
+```
+Dimensional reduction
+
+```{r}
+ElbowPlot(seur_comb, ndims = 100)
+```
+
+
+Horn's paralell analysis
+```{r}
+
+comb_sce<- as.SingleCellExperiment(seur_comb)
+
+var_feat<-VariableFeatures(seur_comb)
+
+set.seed(100010)
+horn <- PCAtools::parallelPCA(logcounts(comb_sce)[var_feat,],
+    BSPARAM=BiocSingular::IrlbaParam(), niters=10)
+horn$n
+
+var_horn <- horn$original$variance
+
+plot(var_horn, type="b", log="y", pch=16,
+     xlab = "Principal components",
+     ylab = "Variance explained")
+permuted <- horn$permuted
+for (i in seq_len(ncol(permuted))) {
+    points(permuted[,i], col="grey80", pch=16)
+    lines(permuted[,i], col="grey80", pch=16)
+}
+abline(v=horn$n, col="red")
+
+```
+
+
+```{r}
+seur_comb <- FindNeighbors(seur_comb, dims = 1:25)
+seur_comb <- FindClusters(seur_comb, resolution = 0.5)
+```
+
+
+```{r}
+seur_comb <- RunUMAP(seur_comb, dims = 1:25)
+
+seur_comb <- RunTSNE(seur_comb, dims = 1:25)
+
+
+
+#Idents(seur_comb)<-"seurat_clusters"
+DimPlot(seur_comb, reduction = "umap", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+```
+
+```{r}
+DimPlot(seur_comb, reduction = "tsne", label = T, cols = mycoloursP, 
+        pt.size = 0.5)
+```
+
+
+
+
+```{r, fig.width=7, fig.height=4, fig.fullwidth=TRUE}
+DimPlot(seur_comb, reduction = "pca", label = F, cols = mycoloursP, 
+        pt.size = 2)
+```
+
+
+
+```{r}
+seur_comb <- FindClusters(seur_comb, resolution = 0.8 )
+
+Idents(seur_comb) <- "RNA_snn_res.0.8"
+DimPlot(object = seur_comb, reduction = "umap", label=T, cols = mycoloursP)
+
+DimPlot(object = seur_comb, reduction = "umap", label=F, cols = mycoloursP)
+```
+
+
+```{r}
+Idents(seur_comb) <- "RNA_snn_res.0.8"
+DimPlot(object = seur_comb, reduction = "tsne", label=T, cols = mycoloursP)
+
+DimPlot(object = seur_comb, reduction = "tsne", label=F, cols = mycoloursP)
+```
+
+
+
+```{r}
+Idents(seur_comb) <- "RNA_snn_res.0.8"
+
+
+DimPlot(object = seur_comb, reduction = "pca", label=F, cols = mycoloursP)
+```
+
+How many individuals contribute to every cluster:
+```{r}
+IDsPerCluster <- as.data.frame(tapply(seur_comb@meta.data$caseNO, 
+                                    seur_comb@meta.data$RNA_snn_res.0.8, 
+                                    function(x) length(unique(x)) ))
+
+names(IDsPerCluster) <- "NumberOfIDs"
+IDsPerCluster$RNA_snn_res.0.8 <- rownames(IDsPerCluster)
+IDsPerCluster$Cluster <- rownames(IDsPerCluster)
+
+IDsPerCluster
+```
+
+```{r}
+
+met_data <- seur_comb@meta.data
+
+met_data$Cluster <- met_data$RNA_snn_res.0.8
+
+merged_dat <- merge(met_data, IDsPerCluster, by = "Cluster", all = TRUE)
+
+merged_dat$Barcode == met_data$Barcode
+
+barcode_oder <- met_data$Barcode
+
+merged_dat <- merged_dat[match(barcode_oder, merged_dat$Barcode),]
+
+merged_dat$Barcode == met_data$Barcode
+
+id_vector <- merged_dat$NumberOfIDs
+seur_comb$CountsPerCluster_res_0_8 <- id_vector
+
+
+#seur_comb@meta.data$Cluster_0_5<-seur_comb@meta.data$RNA_snn_res.0.5
+
+
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[3:40],
+        group.by = "CountsPerCluster_res_0_8")
+
+
+
+```
+
+
+```{r}
+seur_comb@meta.data$IdCountGroup <- 
+  ifelse(seur_comb@meta.data$CountsPerCluster_res_0_8 < 10, "< 10", 
+         ifelse(seur_comb@meta.data$CountsPerCluster_res_0_8 == 20, 20, 
+                paste(seur_comb@meta.data$CountsPerCluster_res_0_8)))
+
+Idents(seur_comb)<-"IdCountGroup"
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[20:30])
+
+```
+
+
+How many samples contribute to each cluster
+
+
+```{r}
+samples_per_cluster <- as.data.frame(tapply(seur_comb@meta.data$process_number, 
+                                    seur_comb@meta.data$RNA_snn_res.0.8, 
+                                    function(x) length(unique(x)) ))
+
+names(samples_per_cluster) <- "samples_per_cluster"
+samples_per_cluster$RNA_snn_res.0.8 <- rownames(samples_per_cluster)
+samples_per_cluster$Cluster <- rownames(samples_per_cluster)
+
+samples_per_cluster
+```
+
+```{r}
+
+
+merged_dat <- merge(merged_dat, samples_per_cluster, by = "Cluster", all = TRUE)
+
+#merged_dat$Barcode == met_data$Barcode
+
+barcode_oder <- met_data$Barcode
+
+merged_dat <- merged_dat[match(barcode_oder, merged_dat$Barcode),]
+
+merged_dat$Barcode == met_data$Barcode
+
+sample_vector <- merged_dat$samples_per_cluster
+
+
+seur_comb$samplesPerCluster_res_0_8 <- sample_vector
+
+
+#seur_comb@meta.data$Cluster_0_5<-seur_comb@meta.data$RNA_snn_res.0.5
+
+
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[8:50],
+        group.by = "samplesPerCluster_res_0_8")
+
+
+
+```
+
+
+```{r}
+seur_comb@meta.data$qurtile_sample__per_cl_group
+
+seur_comb@meta.data$sample_count_per_cl_group <- 
+  ifelse(seur_comb@meta.data$samplesPerCluster_res_0_8 < 10, "< 10", 
+         ifelse(seur_comb@meta.data$samplesPerCluster_res_0_8 == 58, "58 (All)",
+                ifelse(between(seur_comb@meta.data$samplesPerCluster_res_0_8, 
+                               10, 29), "10 - 29",
+                       ifelse(between(seur_comb@meta.data$samplesPerCluster_res_0_8, 
+                               30, 39), "30 - 39",
+                              ifelse(between(seur_comb@meta.data$samplesPerCluster_res_0_8, 
+                               40, 49), "40 - 49",
+                               "50 - 57")))))
+
+
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[14:50],
+        group.by = "sample_count_per_cl_group")
+
+```
+
+```{r}
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[20:30],
+        group.by = "sample_count_per_cl_group",
+        split.by = "sample_count_per_cl_group")
+
+```
+
+
+
+Relevel 10 X batch for plotting in order
+```{r}
+
+seur_comb$X10XBatch <- as.factor(seur_comb$X10XBatch)
+seur_comb$X10XBatch <- factor(seur_comb$X10XBatch, levels = c("1",
+                                                              "2",
+                                                              "3",
+                                                              "4",
+                                                              "5",
+                                                              "6",
+                                                              "7",
+                                                              "8",
+                                                              "9",
+                                                              "10"))
+Idents(seur_comb)<-"X10XBatch"
+mycolours<- mycoloursP[1:7]
+
+
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP)
+
+```
+
+```{r, fig.width=7, fig.height=5, fig.fullwidth=TRUE}
+Idents(seur_comb)<-"caseNO"
+
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP)
+```
+
+
+```{r}
+
+Idents(seur_comb)<-"SequencingPool"
+mycolours<- mycoloursP[1:6]
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP)
+```
+
+
+
+```{r}
+Idents(seur_comb)<-"gender"
+mycolours<- mycoloursP[1:2]
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP)
+```
+
+
+```{r}
+seur_comb@meta.data$AgeGroup<-ifelse(seur_comb@meta.data$Age < 50, "Young", "Old")
+
+Idents(seur_comb)<-"AgeGroup"
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP[10:11])
+```
+
+
+```{r}
+seur_comb@meta.data$RIN<-ifelse(seur_comb@meta.data$RINvalue == "", "NULL", 
+                                seur_comb@meta.data$RINvalue)
+Idents(seur_comb)<-"RIN"
+
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP[6:40])
+
+```
+
+
+```{r}
+
+Idents(seur_comb)<-"UMI_QC"
+mycolours<- mycoloursP[25:26]
+
+DimPlot(seur_comb, reduction = "umap", cols = mycolours)
+
+```
+
+```{r}
+
+Idents(seur_comb)<-"CauseOfDeath_category"
+
+
+DimPlot(seur_comb, reduction = "umap", cols = mycoloursP[20:27])
+
+```
+
+Doublet markers
+```{r}
+
+DimPlot(seur_comb, reduction = "umap", 
+        label = F, 
+        group.by = "scDblFinder_class",
+        cols = c(mycoloursP[25] , mycoloursP[26]),
+        pt.size = 0.7)
+
+```
+
+```{r}
+
+DimPlot(seur_comb, reduction = "umap", 
+        label = F, 
+        group.by = "scDblFinder_class",
+        split.by = "scDblFinder_class",
+        cols = c(mycoloursP[25] , mycoloursP[26]),
+        pt.size = 0.7)
+
+```
+
+
+
+
+
+```{r}
+
+seur_comb@meta.data$ageSex <- ifelse(seur_comb@meta.data$gender == 
+                                       "M" & 
+                                       seur_comb@meta.data$AgeGroup == 
+                                       "Old", 
+                                     "Old men",
+                                     ifelse(seur_comb@meta.data$gender == 
+                                              "M" & 
+                                              seur_comb@meta.data$AgeGroup == 
+                                              "Young", 
+                                            "Young men",
+                                            ifelse(seur_comb@meta.data$gender == 
+                                                     "F" & 
+                                                     seur_comb@meta.data$AgeGroup == 
+                                                     "Young", "Young women",
+                                                 "Old women")))
+
+Idents(seur_comb)<-"ageSex"
+
+DimPlot(seur_comb, reduction = "umap", label = F, cols = mycoloursP[15:42])
+
+```
+
+
+```{r}
+seur_comb <- FindClusters(seur_comb, resolution = 0.1)
+
+DimPlot(seur_comb, reduction = "umap", label = T, cols = mycoloursP)
+```
+
+
+
+
+
+
+
+
+
+
+The following markers were used for cell types: 
+neurons: SNAP25, STMN2,RBFOX3 and GABRB2;
+inhibitory neurons: GAD1, GAD2 and SLC32A1; 
+excitatory neurons: SATB2, SLC17A7 and SLC17A6; 
+astrocytes: GJA1, AQP4, GLUL, SOX9, NDRG2, GFAP, ALDH1A1, ALDH1L1 and VIM; 
+endothelial: CLDN5, VTN and ICAM2; 
+pericytes: PDGFRB and NOTCH3
+macrophage/microglia: SPI1, MRC1, TMEM119, CX3CR1 and A1F1; 
+OPCs: PDGFRA, CSPG4, GPR17, PTPRZ1, OLIG1, OLIG2, PCDH15, PTGDS,
+oligodendrocytes: PLP1, CNP, MAG, MOG, MOBP, MBP, SOX10
+
+
+```{r}
+FeaturePlot(seur_comb, features = "SNAP25") 
+
+FeaturePlot(seur_comb, features = "GABRB2") 
+
+FeaturePlot(seur_comb, features = "PLP1") 
+
+FeaturePlot(seur_comb, features = "CNP") 
+
+FeaturePlot(seur_comb, features = "GJA1") 
+
+FeaturePlot(seur_comb, features = "AQP4") 
+
+FeaturePlot(seur_comb, features = "CD74") 
+
+FeaturePlot(seur_comb, features = "CX3CR1") 
+
+FeaturePlot(seur_comb, features = "CLDN5") 
+
+FeaturePlot(seur_comb, features = "ICAM2") 
+
+FeaturePlot(seur_comb, features = "PDGFRB") 
+
+FeaturePlot(seur_comb, features = "NOTCH3") 
+
+FeaturePlot(seur_comb, features = "PDGFRA") 
+
+FeaturePlot(seur_comb, features = "PCDH15") 
+
+FeaturePlot(seur_comb, features = "GAD1") 
+
+FeaturePlot(seur_comb, features = "GAD2") 
+
+FeaturePlot(seur_comb, features = "SLC32A1") 
+
+FeaturePlot(seur_comb, features = "SATB2") 
+
+FeaturePlot(seur_comb, features = "SLC17A7") 
+
+FeaturePlot(seur_comb, features = "SLC17A6")
+
+
+
+
+
+
+```
+
+Above are only a few marker genes. More can be found in a separate markdown file
+with a respective descriptive name.
+
+
+
+
+```{r}
+
+seur_comb$rough_annot <- seur_comb$RNA_snn_res.0.1
+
+Idents(seur_comb) <- "rough_annot"
+
+seur_comb <-  RenameIdents(
+  seur_comb, 
+  "0" = "Oligo", 
+  "1" = "RELN+ neurons", 
+  "2" = "Endothelial-Pericyte",
+  "3" = "Microglia_Macrophages",
+  "4" = "Neuron_In",
+  "5" = "OPC", 
+  "6" = "Neuron_Ex",
+  "7" = "Astrocyte", 
+  "8" = "Endothelial-Pericyte", 
+  "9" = "Unidendtified",
+  "10" = "Neuron",
+  "11" = "Unidendtified",
+  "12" = "Neuron",
+  "13" = "Unidendtified",
+  "14" = "Neuron"
+)
+
+
+
+
+```
+
+```{r}
+seur_comb$rough_annot <- Idents(seur_comb)
+
+```
+
+```{r, fig.width=7, fig.height=6, fig.fullwidth=TRUE}
+
+DimPlot(seur_comb, 
+        label = T, 
+        cols = mycoloursP, 
+        repel = T, 
+        group.by = "rough_annot")
+```
+
+
+
+
+
+
+```{r, fig.width=7, fig.height=6, fig.fullwidth=TRUE}
+DimPlot(seur_comb, 
+        label = F, 
+        cols = mycoloursP, 
+        group.by = "rough_annot")
+
+
+```
+
+
+
+
+
+During our analysis we identified several samples with lower quality based on 
+either their high total nuclei count, low mean UMI count or large proportion 
+of spliced compared to unspliced mRNAs. We will mark those samples in the 
+metadata
+
+```{r}
+sample_qc_failed <- c(27, 8, 43, 63, 5, 2, 69, 45, 66, 50)
+
+seur_comb$sample_qc_failed <- ifelse(seur_comb$process_number 
+                                     %in% sample_qc_failed, 
+                                     "TRUE", "FALSE")
+```
+
+```{r}
+DimPlot(seur_comb, group.by = "sample_qc_failed", cols = mycoloursP)
+
+DimPlot(seur_comb, 
+        group.by = "sample_qc_failed", 
+        split.by = "sample_qc_failed", 
+        cols = c(mycoloursP[6], mycoloursP[5]  ))
+```
+
+```{r}
+
+DimPlot(seur_comb, 
+        group.by = "QC_UMI", 
+        split.by = "QC_UMI", 
+        cols = mycoloursP[16:17])
+```
+
+
+
+```{r}
+summary(as.factor(seur_comb$sample_qc_failed))
+
+
+```
+
+
+
+
+
+
+
+
+save annotatedData 
+
+```{r}
+
+
+dir.create("/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/05_Annotated/allCelltypes")
+
+saveRDS(seur_comb, "/Users/lseeker/Documents/Work/HumanCellAtlas/splice_control_out/datasets/05_Annotated/allCelltypes/HCA_rough_annotated_all.RDS")
+
+
+```
+
+
+Save a master cell metadata that includes all the cellcycle scores and 
+doublet scores etc. and also a file including the barcodes of included oligodendrocytes.
+
+```{r}
+met_data <- seur_comb@meta.data
+
+barcode_df <- data.frame(barcode = oligos$Barcode)
+
+
+write.csv(barcode_df, "/Users/lseeker/Documents/Work/HumanCellAtlas/git_repos/AW_scRNAseq/data/HCA_oligodendroglia_barcodes.csv" )
+
+write.csv(met_data, "/Users/lseeker/Documents/Work/HumanCellAtlas/git_repos/AW_scRNAseq/data/HCA_master_nuclei_metadata.csv" )
+```
+
+```{r}
+
+
+sessionInfo()
+
+```

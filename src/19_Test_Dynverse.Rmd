@@ -1,0 +1,745 @@
+---
+title: "Dynverse for testing different trajectory inference methods"
+author: "Luise A. Seeker"
+date: "09/04/2021"
+output: html_document
+---
+
+# Introduction
+
+[Dyverse](https://dynverse.org) allows for determining trajectory inference 
+methods that fit the data well and also makes it possible to easily test
+different methods. 
+
+Docker or Singularity have to be installed in order to completely use dynverse.
+Find instructions for the installation and for testing the installation 
+[here](https://dynverse.org/users/1-installation/).
+
+# Prepare data for Dynverse and save to input folder
+
+I am planning to run TI methods for the oligodendroglia in my dataset first 
+separately  for the three different tissues, then for all oligodendroglia
+combined regardless of tissue (BA4, CB, CSC)
+
+
+```{r}
+library(dyno)
+library(tidyverse)
+library(Seurat)
+library(dyndimred)
+library(hdf5r)
+library(here)
+library(cli)
+library(dynwrap)
+```
+
+```{r}
+e <- 16000 * 1024^2
+options(future.globals.maxSize = e)
+```
+
+```{r}
+nad_ol <- readRDS(here("data", 
+                       "single_nuc_data", 
+                       "oligodendroglia",
+                       "srt_oligos_and_opcs_LS.RDS"))
+
+```
+
+# Introduction
+
+I would like to use dynverse to select the most appropriate trajecotry 
+analysis methods for my dataset. 
+
+After having tried to use it for a little while I realised that I should not 
+attempt to run this on my entire dataset (which resulted in no proposed 
+methods). I think it makes sense to run this on the variable gened only.
+
+# Subset dataset for variable genes
+
+```{r}
+var_genes <- VariableFeatures(nad_ol)
+
+red_ol <- subset(nad_ol, features = var_genes)
+```
+
+
+# Prepare dyno data
+
+In Seurat columns are cells and rows genes, in dyno it is the other way around. 
+Therefore matrices need to be transposed before the wrap_expression() is used.
+
+While preparing data fro dyno, a starting cluster can and should be set, because
+some TI methods rely on user input on that. In my case, my start cluster varries 
+with tissue. I have to consider this below.
+
+Also, one has to indicate the metadata column that contains the cluster 
+information below. I used ol_clusters_named.
+
+I also use the original umap embeddings of the Seurat object to add to the
+dyno object.
+
+```{r}
+# create folders to save data
+dir.create(here("data", "ti_input", "dyno_obj"), recursive = TRUE)
+dir.create(here("data", "ti_input", "subs_seur"), recursive = TRUE)
+
+
+tissue_list <- c("BA4", "CB", "CSC")
+
+
+for (i in 1:(length(tissue_list) + 1)) {
+  if (i <= length(tissue_list)) {
+    Idents(red_ol) <- "Tissue"
+    dat <- subset(red_ol, ident = tissue_list[i])
+    file_name <- paste("mydat", tissue_list[i], ".RDS", sep = "")
+    seur_save_name <- paste("seur_var_genes", tissue_list[i], ".RDS", sep = "")
+    if (tissue_list[i] == "BA4") {
+      start_point <- "OPC_B"
+    } else {
+      start_point <- "OPC_A"
+    }
+  } else {
+    dat <- red_ol
+    file_name <- paste("mydat", "full_data", ".RDS", sep = "")
+    seur_save_name <- "seur_var_genes_full_data.RDS"
+    start_point <- "OPC_A"
+  }
+  
+  my_dat <- wrap_expression(
+    expression = t(as.matrix(dat@assays$RNA@data)),
+    counts = t(as.matrix(dat@assays$RNA@counts))
+  )
+  groups_id <- matrix(nrow = length(dat@meta.data$ol_clusters_named), ncol = 2)
+
+  colnames(groups_id) <- c("cell_id", "group_id")
+  groups_id[, 1] <- rownames(dat@meta.data)
+  groups_id[, 2] <- as.character(dat@meta.data$ol_clusters_named)
+
+  my_dat <- add_grouping(
+    dataset = my_dat,
+    as.data.frame(groups_id)
+  )
+
+  my_dat <- add_grouping(
+    my_dat,
+    dat$ol_clusters_named
+  )
+
+  my_dat <- add_dimred(
+    my_dat,
+    dat@reductions$umap@cell.embeddings
+  )
+
+
+
+  dat_subset <- subset(x = dat, subset = ol_clusters_named == start_point)
+
+  my_dat <- add_prior_information(
+    my_dat,
+    start_id = rownames(dat_subset@meta.data)
+  )
+
+  saveRDS(my_dat, here("data", "ti_input", "dyno_obj", file_name))
+  saveRDS(dat, here("data", "ti_input", "subs_seur", seur_save_name))
+}
+
+```
+
+# Generate guidelines on which TI methods 
+
+It is possible to open a shiny app with the guidelines_shiny() function which 
+shows the best fitting TI methods, provides additional information (such as on 
+the complexity of trajectories) and allows the settig of additional parameters
+such as memory use and time constraints. 
+
+```{r}
+dyno_files <- list.files(here("data", "ti_input", "dyno_obj"))
+```
+
+
+This chunk opens shiny apps. I am not running it when knitting the .Rmd so that
+the knitting process is not interrupted.
+```{r, eval = FALSE}
+
+mydat_ba4 <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[1]))
+  guidelines <- guidelines_shiny(mydat_ba4)
+  
+mydat_cb <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[2]))
+  guidelines <- guidelines_shiny(mydat_cb)
+  
+mydat_csc <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[3]))
+  guidelines <- guidelines_shiny(mydat_csc)
+  
+mydat_full_dat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[4]))
+  guidelines <- guidelines_shiny(mydat_full_dat)
+
+```
+
+
+# Print recommended methods
+First for tissue datasets, then for combined.
+```{r}
+for(i in 1: length(dyno_files)){
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  guidelines <- guidelines(
+  mydat,
+  answers = answer_questions(
+    mydat,
+    multiple_disconnected = FALSE
+  )
+)
+
+print(guidelines$methods_selected)
+
+}
+```
+
+It looks like for my dataset slingshot, paga-tree, scorpius and angle are 
+recommended for the tissue datasets and paga_tree, paga, mst and comp1 for the
+full dataset. But when time and memory contrains are lifted for the full dataset
+slingshot is again the predicted top performer, followed by paga-tree, scorpius 
+and angle. I will explore those methods below. 
+
+
+
+
+# Test different TI methods
+Prepare
+
+```{r}
+sr_files <- list.files(here("data", "ti_input", "subs_seur"))
+reord_sr <- list()
+reord_sr[1] <- sr_files[2]
+reord_sr[2] <- sr_files[3]
+reord_sr[3] <- sr_files[4]
+reord_sr[4] <- sr_files[1]
+
+```
+
+```{r}
+resort_col <- c(mycoloursP[8:16], mycoloursP[6], mycoloursP[7]) 
+
+
+```
+
+## Angle
+
+```{r}
+for(i in 1:length(dyno_files)){
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  set.seed(1)
+  model_angle <- infer_trajectory(mydat, "angle")
+  print(plot_dimred(model_angle))
+  print(plot_dimred(model_angle, dimred = mydat$dimred))
+  save_file_name <- strsplit(dyno_files[i], "ydat" )
+  save_file_name <- paste("mod_angle_",  save_file_name[[1]][2], sep = "")
+  saveRDS(model_angle, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+for (i in 1:length(dyno_files)) {
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_angle <- infer_trajectory(mydat, "angle")
+  # Rooting
+  model_angle <- model_angle %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_angle <- label_milestones_markers(
+    model_angle,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_angle))
+  print(plot_dimred(model_angle,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ) + scale_color_manual(values = mycoloursP[6:40]))
+  print(plot_dimred(
+    model_angle,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ) + scale_fill_manual(values = resort_col))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_angle_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_angle, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+
+# For some reason the colouring for CSC and the whole dataset is always different.
+# Don't understand why.
+```
+
+
+
+## Slingshot
+
+This is slingshot run using dynverse without setting a start cluster. 
+The slingshot analysis is also done without dynverse wrapper using a separate
+script. The results here look different, maybe partially due to the smoothers
+being used. It shows that if a method looks promising in dynverse, it might be 
+a good idea to re-run it outside of if. 
+
+```{r}
+
+
+
+
+for (i in 1:length(dyno_files)) {
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_slingshot <- infer_trajectory(mydat, "slingshot")
+  # Rooting
+  model_slingshot <- model_slingshot %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_slingshot <- label_milestones_markers(
+    model_slingshot,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_slingshot))
+  print(plot_dimred(model_slingshot,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  )+ scale_color_manual(values = mycoloursP[6:40]))
+  print(plot_dimred(
+    model_slingshot,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  )+ scale_color_manual(values = mycoloursP[6:40]))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("mod_slingshot_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_slingshot, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+set.seed(1)
+model_slingshot <- infer_trajectory(my_dat_ba4, "slingshot")
+
+
+```
+
+
+## Scorpius
+
+```{r}
+
+for (i in 1:length(dyno_files)) {
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_scorpius <- infer_trajectory(mydat, "scorpius")
+  # Rooting
+  model_scorpius <- model_scorpius %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_scorpius <- label_milestones_markers(
+    model_scorpius,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_scorpius))
+  print(plot_dimred(model_scorpius,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_scorpius,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_scorpius_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_scorpius, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+
+```
+
+
+Load existing files to plot
+```{r}
+list.files(here("outs", "traj_inf_output", "models"))
+model_scorpius <- readRDS(here("outs", "traj_inf_output", "models", save_file_name))
+
+```
+
+
+
+## PAGA-tree
+
+```{r}
+for (i in c(1, 3, 4)) {
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_paga_tree = dynwrap::infer_trajectory(mydat, 
+                                              ti_paga_tree(filter_features = F), 
+                                  verbose = FALSE)
+  # Rooting
+  model_paga_tree <- model_paga_tree %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_paga_tree <- label_milestones_markers(
+    model_paga_tree,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_paga_tree))
+  print(plot_dimred(model_paga_tree,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_paga_tree,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_paga_tree_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_paga_tree, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+
+```
+### Manually plot CB
+
+For some reason PAGA tree and PAGA do not like my CB dataset. I will therefore 
+generate the plots for that one below:
+
+```{r}
+
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[2]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[2]))
+  set.seed(1)
+  model_paga_tree = dynwrap::infer_trajectory(mydat, 
+                                              ti_paga_tree(filter_features = F), 
+                                  verbose = FALSE)
+  # Rooting
+  model_paga_tree <- model_paga_tree %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_paga_tree <- label_milestones_markers(
+    model_paga_tree,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_paga_tree))
+  print(plot_dimred(model_paga_tree,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_paga_tree,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_paga_tree_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_paga_tree, here("outs", "traj_inf_output", "models", save_file_name))
+
+```
+
+
+## PAGA
+
+```{r}
+#for (i in 1:length(dyno_files)) {
+for (i in c(1, 3, 4)){
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_paga = dynwrap::infer_trajectory(mydat, 
+                                              ti_paga(filter_features = F), 
+                                  verbose = FALSE)
+  # Rooting
+  model_paga <- model_paga %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_paga <- label_milestones_markers(
+    model_paga,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_paga))
+  print(plot_dimred(model_paga,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_paga,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_paga_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_paga, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+
+```
+
+### Manually plot PAGA for CB
+```{r}
+mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[2]))
+dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[2]))
+  set.seed(1)
+  model_paga = dynwrap::infer_trajectory(mydat, 
+                                              ti_paga(filter_features = F), 
+                                  verbose = FALSE)
+  # Rooting
+  model_paga <- model_paga %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_paga <- label_milestones_markers(
+    model_paga,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_paga))
+  print(plot_dimred(model_paga,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_paga,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_paga_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_paga, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+```
+
+## MST
+
+```{r}
+for (i in 1:length(dyno_files)) {
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  set.seed(1)
+  model_mst = dynwrap::infer_trajectory(mydat, 
+                                              ti_mst(), 
+                                  verbose = FALSE)
+  # Rooting
+  model_mst <- model_mst %>%
+    add_root_using_expression(c("PDGFRA"), mydat$expression)
+
+  # Milestone labelling
+
+  model_mst <- label_milestones_markers(
+    model_mst,
+    markers = list(
+      OPC_A = c("SLC22A3"),
+      OPC_B = c("NELL1"),
+      # COP_A = c("GAP43"),
+      # COP_B = c("GPC5"),
+      # COP_C = c("PRICKLE1"),
+      Oligo_A = c("OPALIN"),
+      # Oligo_B = c("SGK1", "HHIP", "AFF3", "RBFOX1"),
+      Oligo_C = c("FMN1"),
+      # Oligo_D = c("RASGRF1"),
+      Oligo_F = c("SPARC")
+    ),
+    mydat$expression
+  )
+
+  # print
+  print(plot_dimred(model_mst))
+  print(plot_dimred(model_mst,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    dimred = mydat$dimred
+  ))
+  print(plot_dimred(
+    model_mst,
+    expression_source = mydat$expression,
+    grouping = dat$ol_clusters_named,
+    label_milestones = FALSE,
+    dimred = mydat$dimred
+  ))
+  save_file_name <- strsplit(dyno_files[i], "ydat")
+  save_file_name <- paste("model_mst_", save_file_name[[1]][2], sep = "")
+  saveRDS(model_mst, here("outs", "traj_inf_output", "models", save_file_name))
+}
+
+
+
+```
+
+
+
+#### Plot all trajectories
+
+```{r, eval = FALSE}
+ti_models <- list.files(here("outs", "traj_inf_output", "models"))
+
+# models have 
+tissue_mod_list <- list() 
+tissue_mod_list[[1]]<- ti_models[grep("BA4", ti_models)]
+tissue_mod_list[[2]]<- ti_models[grep("CB", ti_models)]
+tissue_mod_list[[3]]<- ti_models[grep("CSC", ti_models)]
+tissue_mod_list[[4]]<- ti_models[grep("full", ti_models)]
+
+for(i in 1: length(tissue_mod_list)){
+  mydat <- readRDS(here("data", "ti_input", "dyno_obj", dyno_files[i]))
+  dat <- readRDS(here("data", "ti_input", "subs_seur", reord_sr[i]))
+  for(k in 1: length(tissue_mod_list[[i]])){
+    model <- readRDS(here("outs", "traj_inf_output", "models",tissue_mod_list[[i]][k]))
+
+  
+    print(plot_dimred(
+      model,
+      expression_source = mydat$expression,
+      grouping = dat$ol_clusters_named,
+      label_milestones = FALSE,
+      dimred = mydat$dimred
+    ))
+  }
+}
+
+```
+
+
+
+# Session info
+
+```{r}
+sessionInfo()
+
+```

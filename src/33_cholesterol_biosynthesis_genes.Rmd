@@ -1,0 +1,101 @@
+---
+title: "Cholesterol_biosythesis_genes"
+author: "Luise A. Seeker"
+date: "01/07/2021"
+output: html_document
+---
+# Introduction
+
+I watched Professor Terry Wood from Rutgers University presenting a comparison 
+of murine single cell RNAseq data from  brain and spinal cord at Euroglia 2021. 
+She showed that in mice the most obvious difference between those tissues was
+that spinal cord oligodendroglia expressed more cholesterol biosynthesis genes. 
+This makes sense considering that they produce longer myelin sheaths and thus
+more myelin per cell and myelin production requires cholesterol. 
+
+Cholesterol biosynthesis genes have never particularly shown up in my 
+differential gene expression analyses, and still, I think it's a good idea to at
+least quickly check. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(here)
+```
+
+```{r}
+
+nad_ol <- nad_ol <- readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+```
+
+
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "ACAT2", split.by = "Tissue")
+```
+
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "HMGCS1", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "HMGCR", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "PMVK", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "MVD", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "IDI1", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "FDPS", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "FDFT1", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "SQLE", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "DHCR24", split.by = "Tissue")
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "MSMO1", split.by = "Tissue")
+
+```
+
+```{r, fig.width = 9, fig.height = 2.5}
+FeaturePlot(nad_ol, features = "SC5D", split.by = "Tissue")
+
+```
+
+# Conclusion
+
+It does not look like cholesterol genes are particularly enriched in the spinal 
+cord oligodendroglia. The observed difference to the mouse data may be due to 
+species differences or due to age differences. Most myelination happens soon post
+partum, but myelination at adult ages, particularly in the absence of injury/
+disease is less pronounced. There may be a tissue difference at earlier ages
+that is not possible to observe anymore at adult ages. 
+
+# SessionInfo
+
+
+```{r}
+sessionInfo()
+```

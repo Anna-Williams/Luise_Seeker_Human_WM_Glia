@@ -1,0 +1,126 @@
+---
+title: "Validation_HCN2_OLIG2_Basescope"
+author: "Luise A. Seeker"
+date: "03/08/2022"
+output: html_document
+---
+This is based on only a single staining of one BA4 and one CSC tissue samples to
+see if I can detect HCN2 positive oligodendrocytes in both tissues. C1(blue) 
+probe target was HCN2, C2 (red) target Olig2.
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+hcn2_data <- read.csv(here("data", 
+                   "validation_data", 
+                   "20220808_HCN2_OLIG2.csv"))
+
+```
+
+
+```{r}
+names(hcn2_data)
+
+hcn2_data$tissue <- as.factor(hcn2_data$Tissue)
+
+
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("HCN2_C1_blue",
+                "Olig2_C2_red", 
+                "HCN2_Olig2")
+
+long_data <- gather(hcn2_data, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:30])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:30])
+
+
+```
+
+
+
+```{r}
+
+hcn2_data$HCN2_Olig2 <- as.numeric(hcn2_data$HCN2_Olig2)
+
+
+ggplot(hcn2_data, aes(x = tissue, y = perc_HCN2_pos_olig2)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("HCN2+ OLIG2+ (%)") + xlab("Tissue")
+
+
+ggplot(hcn2_data, aes(x = tissue, y = HCN2_Olig2)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("HCN2+ OLIG2+") + xlab("Tissue")
+
+
+
+
+```
+
+
+Conclusion:
+In accordance to the snRNAseq data, HCN2 positive oligodendrocytes (Olig2+)
+can be found in both BA4 and spinal cord. It is only one sample each and 
+therefore not enough to comment, but based in what I see here, more samples 
+may be able to show that there are more HCN2 positive oligodendrocytes
+in the spinal cord compared to the brain. 
+
+```{r}
+sessionInfo()
+
+```

@@ -1,0 +1,1045 @@
+---
+title: "DGE age, sex and tissue within clusters"
+author: "Luise A. Seeker"
+date: "16/04/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# Load libraries
+```{r}
+
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+library(EnhancedVolcano)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+
+```
+
+```{r}
+
+nad_ol <- nad_ol <- readRDS(here("data", 
+                                 "single_nuc_data", 
+                                 "oligodendroglia",
+                                 "srt_oligos_and_opcs_LS.RDS"))
+```
+
+```{r}
+seur_comb <- readRDS(here("data", 
+                          "single_nuc_data", 
+                          "all_cell_types",
+                          "srt_anno_01.RDS"))
+
+
+```
+
+# Perform differential gene expression with tissue across all oligodendroglia
+## Tissue
+```{r}
+
+dir.create(here("outs", "DGE_tissue", "overall"), recursive = T)
+
+Idents(nad_ol) <- "Tissue"
+
+mark_tissue_overall <- FindAllMarkers(nad_ol, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+
+fil_ov_ti_mark <- subset(mark_tissue_overall, 
+                         mark_tissue_overall$pct.1 > 0.25 &
+                           mark_tissue_overall$pct.2 < 0.6 &
+                           mark_tissue_overall$avg_log2FC > 0.6)
+
+write.csv(mark_tissue_overall, here("outs", "DGE_tissue", "overall", 
+                           "Tissue_markers_overall.csv"))
+```
+## Age
+
+```{r}
+Idents(nad_ol) <- "AgeGroup"
+dir.create(here("outs", "DGE_age_sex", "overall"), recursive = T)
+
+
+
+mark_age_overall <- FindAllMarkers(nad_ol, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+
+
+
+write.csv(mark_age_overall, here("outs", "DGE_age_sex", "overall", 
+                           "Age_markers_overall.csv"))
+
+#mark_age_overall <- read.csv(here("outs", "DGE_age_sex", "overall", 
+#                           "Age_markers_overall.csv"))
+
+sig_age_markers <- subset(mark_age_overall, mark_age_overall$p_val_adj <0.05)
+
+top_age<- sig_age_markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+DotPlot(nad_ol, features = unique(top_age$gene)) + NoLegend()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+```
+
+## Sex
+
+```{r}
+
+Idents(nad_ol) <- "gender"
+
+mark_sex_overall <- FindAllMarkers(nad_ol, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+
+
+
+write.csv(mark_sex_overall, here("outs", "DGE_age_sex", "overall", 
+                           "Sex_markers_overall.csv"))
+
+#mark_sex_overall <- read.csv(here("outs", "DGE_age_sex", "overall", 
+#                          "Sex_markers_overall.csv"))
+
+sig_sex_markers <- subset(mark_sex_overall, mark_sex_overall$p_val_adj <0.05)
+
+top_sex<- sig_sex_markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+DotPlot(nad_ol, features = unique(top_sex$gene)) + NoLegend()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Age*Sex
+```{r}
+
+Idents(nad_ol) <- "ageSex"
+
+mark_age_sex_overall <- FindAllMarkers(nad_ol, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+
+
+
+write.csv(mark_age_sex_overall, here("outs", "DGE_age_sex", "overall", 
+                           "Age_sex_markers_overall.csv"))
+
+sig_age_sex_markers <- subset(mark_age_sex_overall, mark_age_sex_overall$p_val_adj <0.05)
+
+top_age_sex<- sig_age_sex_markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+fil_age_sex <- subset(mark_age_sex_overall, 
+                      mark_age_sex_overall$avg_log2FC > 0.4 &
+                      mark_age_sex_overall$pct.1 > 0.25 &
+                      mark_age_sex_overall$pct.2 < 0.6)
+
+nad_ol$ageSex <- factor(nad_ol$ageSex, levels = c("Old men",
+                                                  "Old women",
+                                                  "Young men",
+                                                  "Young women"))
+
+top_age_sex <- top_age_sex %>% 
+          arrange(factor(top_age_sex$cluster, levels = c("Old men",
+                                                         "Old women",
+                                                         "Young men",
+                                                         "Young women")))
+
+DotPlot(nad_ol, features = unique(fil_age_sex$gene)) + NoLegend()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+DotPlot(nad_ol, features = unique(top_age_sex$gene)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+# Perform pairwise differential gene expression with tissue across all oligodendroglia
+
+```{r}
+
+dir.create(here("outs", "DGE_tissue", "pairwise"))
+
+Idents(nad_ol) <- "Tissue"
+
+
+mark_CSC_BA4_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "CSC", 
+                                   ident.2 = "BA4",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_CSC_BA4_overall <- subset(mark_CSC_BA4_overall, 
+                         mark_CSC_BA4_overall$pct.1 > 0.25 &
+                           mark_CSC_BA4_overall$pct.2 < 0.6 &
+                           mark_CSC_BA4_overall$avg_log2FC > 0.6)
+
+CSC_genes <- rownames(fil_mark_CSC_BA4_overall)
+
+write.csv(mark_CSC_BA4_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_CSC_BA4_overall.csv"))
+
+mark_CSC_CB_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "CSC", 
+                                   ident.2 = "CB",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_CSC_CB_overall <- subset(mark_CSC_CB_overall, 
+                         mark_CSC_CB_overall$pct.1 > 0.25 &
+                           mark_CSC_CB_overall$pct.2 < 0.6 &
+                           mark_CSC_CB_overall$avg_log2FC > 0.6)
+
+CSC_CB_genes <- rownames(fil_mark_CSC_CB_overall)
+
+write.csv(mark_CSC_CB_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_CSC_CB_overall.csv"))
+
+
+Idents(nad_ol) <- "Tissue"
+
+
+mark_BA4_CSC_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "BA4", 
+                                   ident.2 = "CSC",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_BA4_CSC_overall <- subset(mark_BA4_CSC_overall, 
+                         mark_BA4_CSC_overall$pct.1 > 0.2 &
+                           mark_BA4_CSC_overall$pct.2 < 0.6 &
+                           mark_BA4_CSC_overall$avg_log2FC > 0.6)
+
+BA4_genes <- rownames(mark_BA4_CSC_overall)
+
+write.csv(mark_BA4_CSC_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_BA4_CSC_overall.csv"))
+
+mark_BA4_CB_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "BA4", 
+                                   ident.2 = "CB",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_BA4_CB_overall <- subset(mark_BA4_CB_overall, 
+                         mark_BA4_CB_overall$pct.1 > 0.2 &
+                           mark_BA4_CB_overall$pct.2 < 0.6 &
+                           mark_BA4_CB_overall$avg_log2FC > 0.6)
+
+
+write.csv(mark_BA4_CB_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_BA4_CB_overall.csv"))
+
+
+
+######################
+
+mark_CB_BA4_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "CB", 
+                                   ident.2 = "BA4",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_CB_BA4_overall <- subset(mark_CB_BA4_overall, 
+                         mark_CB_BA4_overall$pct.1 > 0.2 &
+                           mark_CB_BA4_overall$pct.2 < 0.6 &
+                           mark_CB_BA4_overall$avg_log2FC > 0.6)
+
+
+write.csv(mark_CB_BA4_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_CB_BA4_overall.csv"))
+
+###########
+mark_CB_CSC_overall <- FindMarkers(nad_ol,
+                                   ident.1 = "CB", 
+                                   ident.2 = "CSC",
+                                   only.pos = TRUE,
+                                   min.pct = 0.25,
+                                   logfc.threshold = 0.25, 
+                                   test.use = "MAST")
+
+fil_mark_CB_CSC_overall <- subset(mark_CB_CSC_overall, 
+                         mark_CB_CSC_overall$pct.1 > 0.2 &
+                           mark_CB_CSC_overall$pct.2 < 0.6 &
+                           mark_CB_CSC_overall$avg_log2FC > 0.6)
+
+
+write.csv(mark_CB_CSC_overall, here("outs", "DGE_tissue", "pairwise", 
+                           "Tissue_CB_CSC_overall.csv"))
+
+
+
+
+```
+
+# Perform differential gene expression with tissue separately for each cluster
+
+
+```{r}
+
+# create folder where to save data
+dir.create(here("outs", "DGE_tissue", "within_cluster"), recursive = T)
+
+
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+cluster_lev <- levels(nad_ol@meta.data$ol_clusters_named)
+
+for(i in 1 : length(cluster_lev)){
+  clu_dat <- subset(nad_ol, ident = cluster_lev[i])
+  Idents(clu_dat) <- "Tissue"
+  mark_tissue <- FindAllMarkers(clu_dat, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+  save_name_tissue <- paste(cluster_lev[i], "tissue_mark.csv", sep = "_")
+  write.csv(mark_tissue, here("outs", "DGE_tissue", "within_cluster", 
+                           save_name_tissue))
+}
+
+```
+
+
+
+Read in data for plotting differentially expressed genes
+```{r}
+# define function
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE,
+                         clusterwise = TRUE
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv")
+  myfiles = lapply(paste(file_dir, temp, sep = "/"), read.csv)
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                       dat$pct.1 > pct_1 & 
+                       dat$pct.2 < pct_2)
+    if(pairwise == TRUE){
+      
+      top10 <- av_log_fil %>% top_n(10, avg_log2FC)
+      top10$gene <- top10$X
+      ol_clu <- strsplit(temp[i], "_mark.")[[1]][1]
+      top10$ol_clu <- ol_clu
+    }else if(clusterwise == TRUE){
+      av_log_fil$cluster <- as.character(av_log_fil$cluster)
+      top10 <- av_log_fil %>% group_by(cluster) %>% 
+      top_n(10, avg_log2FC)
+      ol_clu <- strsplit(temp[i], "_mark.")[[1]][1]
+      top10$ol_clu <- ol_clu
+    }else if(clusterwise == FALSE){
+      sort_av_log_fc <- av_log_fil[order(-av_log_fil$avg_log2FC),] 
+      top10 <- head(sort_av_log_fc, 10)
+    }else{
+      print("Arguments not correct.")
+    }
+    
+    if(i ==1){
+      fil_genes <- top10
+    }else{
+      fil_genes <- rbind(fil_genes, top10)
+    }
+    
+    if(clusterwise == TRUE){
+    fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+    } else{
+      fil_genes <- fil_genes[!duplicated(fil_genes$X),]
+    }
+    
+  }
+  
+  return(fil_genes)
+}
+
+
+# use function
+fil_genes_tissue_pw <- gen_mark_list(file_dir = here("outs", "DGE_tissue", "pairwise"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           clusterwise = FALSE)
+
+fil_gene_tissue_o <- gen_mark_list(file_dir = here("outs", "DGE_tissue", "overall"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           clusterwise = FALSE)
+
+
+
+fil_genes <- c(fil_genes_tissue_pw$X, fil_gene_tissue_o$gene)
+
+
+
+int_genes <- unique(fil_genes)
+
+
+```
+
+```{r, fig.width = 6, fig.height = 15}
+
+Idents(nad_ol) <- "Tissue"
+
+cluster_averages <- AverageExpression(nad_ol, group.by = "Tissue",
+                                      return.seurat = TRUE)
+
+cluster_averages@meta.data$tissue <- levels(as.factor(nad_ol@meta.data$Tissue)) 
+                                             
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "tissue",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F)
+
+hm_av
+```
+
+```{r}
+
+hm <- DoHeatmap(object = nad_ol, 
+          features = int_genes, 
+          label = TRUE,
+          group.by = "Tissue",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F)
+
+hm
+
+```
+
+```{r}
+Idents(nad_ol) <- "Tissue"
+
+files <- list.files(here("outs", "DGE_tissue", "overall"), pattern = ".csv",  
+                    full.names = TRUE)
+tissue_mark <- read.csv(files)                
+
+sig_tissue <- subset(tissue_mark, tissue_mark$p_val_adj < 0.05)
+
+top_tissue<- sig_tissue %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC)
+
+
+DotPlot(nad_ol, features = unique(top_tissue$gene)) + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+```{r, fig.width = 8, fig.height=11}
+dir.create(here("outs", "DGE_tissue", "DGE_tissue_genes_vis"))
+
+#pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Res_0_3_av_hm.pdf", 
+#    paper="a4", width=8, height=11.5)
+print(hm_av)
+
+#dev.off()
+```
+
+
+```{r, fig.width=15, fig.height = 5}
+
+DoHeatmap(object = nad_ol, features = int_genes, 
+          label = TRUE, 
+          group.by = 'ageSex')
+```
+
+
+```{r, fig.width=20, fig.height = 4}
+
+
+
+Idents(nad_ol) <- "ol_clusters_named"
+
+DotPlot(nad_ol, group.by = "ageSex", features = int_genes) + RotatedAxis()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+# save VlnPlots
+
+
+```{r}
+
+
+save_vln_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 10,
+                           plotheight = 20,
+                           plotwidth = 8,
+                           group_by = Idents(seur_obj),
+                           split_by = NULL,
+                           pt_size = 0.1,
+                           n_col = 1){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+        
+          pdf(paste(save_dir, "/clust_marker_vln_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          finalPlot<-VlnPlot(seur_obj, features = unlist(gene_groups[i]),
+                             group.by = group_by, split.by = split_by,
+                             pt.size= pt_size, ncol=1)
+          print(finalPlot)
+          graphics.off()
+          
+        }
+      }
+      
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "dots"), 
+           recursive = TRUE)    
+
+save_vln_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "dots"),
+               split_by = "ageSex",
+               group_by = "ol_clusters_named")
+
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "no_dots"))
+save_vln_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "vln", "no_dots"),
+               split_by = "ageSex",
+               group_by = "ol_clusters_named",
+               pt_size = 0,
+               plotheight = 30)
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", 
+                "all_cell_types"))
+
+save_vln_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "vln", "all_cell_types"),
+               split_by = "ageSex",
+               group_by = "clusters_named",
+               pt_size = 0,
+               plotheight = 30)
+               
+               
+
+```
+
+
+# save FeaturePlots
+
+
+```{r}
+
+save_feat_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 16,
+                           plotheight = 18,
+                           plotwidth = 20,
+                           split_by = "NULL",
+                           n_col = 4){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+      if(split_by != "NULL"){
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col, split.by = split_by)
+      }else{
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col)
+      }
+        
+          pdf(paste(save_dir, "/clust_marker_feat_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          
+          print(feature_plot)
+          
+          graphics.off()
+          
+        }
+}
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_ol"))
+      
+     
+save_feat_plots(seur_obj= nad_ol, 
+               marker_list = int_genes,
+               split_by = "ageSex",
+               numb_genes = 10,
+               plotheight = 30,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_ol"))
+
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_all_cell_types"))
+
+save_feat_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               split_by = "ageSex",
+               numb_genes = 10,
+               plotheight = 30,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis",
+                               "feature_pl_all_cell_types"))
+               
+               
+
+```
+
+```{r}
+
+y_linked <- c("ASMTY", "TSPY", "IL3RAY", "SRY", "TDF", "ZFY",
+              "PRKY", "AMGL", "ANT3Y", "AZF2", "BPY2", "AZF1",
+              "DAZ", "RBM1", "RBM2", "UTY", "USP9Y", "AMELY")
+
+fil_y_bool<- y_linked %in% rownames(nad_ol)
+
+fil_y_linked <- y_linked[fil_y_bool]
+# "PRKY is not expressed and causes problems in the FeaturePlots
+# (but nor Vln Plot)
+
+fil_y_linked <- fil_y_linked[c(1, 3, 4)]
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "y_linked"))
+      
+     
+save_feat_plots(seur_obj= nad_ol, 
+               marker_list = fil_y_linked,
+               split_by = "ageSex",
+               numb_genes = length(fil_y_linked),
+               plotheight = 9,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "y_linked"))
+
+
+
+```
+
+
+# Volcano plots
+
+Below are vulcano plots of age sex and pairwise tissue and the corresponding vln
+plots of the most interesting hits
+
+# Tissue
+
+```{r, fig.height = 6, fig.width= 6}
+
+Idents(nad_ol) <- "Tissue"
+
+
+#CB vs BA4
+
+cb_ba4_mark <- FindMarkers(nad_ol, ident.1 = "CB",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25)
+
+cb_ba4_mark$pval_plot <- ifelse(cb_ba4_mark$p_val_adj == 0, 
+                                paste(min(cb_ba4_mark$p_val_adj[cb_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(cb_ba4_mark$p_val_adj))
+
+cb_ba4_mark$pval_plot<- as.numeric(paste(cb_ba4_mark$pval_plot))
+
+
+EnhancedVolcano(cb_ba4_mark,
+    lab = rownames(cb_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CB vs. BA4",
+    subtitle = "Oligodendroglia")
+
+```
+
+```{r, fig.height = 6, fig.width= 6}
+#CSC vs BA4
+
+csc_ba4_mark <- FindMarkers(nad_ol, ident.1 = "CSC",
+                          ident.2 = "BA4",
+                          only.pos = FALSE, 
+                          min.pct = 0.25)
+
+csc_ba4_mark$pval_plot <- ifelse(csc_ba4_mark$p_val_adj == 0, 
+                                paste(min(csc_ba4_mark$p_val_adj[csc_ba4_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_ba4_mark$p_val_adj))
+
+csc_ba4_mark$pval_plot<- as.numeric(paste(csc_ba4_mark$pval_plot))
+
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "Oligodendroglia",
+    )
+
+
+fil_genes <- subset(csc_ba4_mark, csc_ba4_mark$avg_log2FC > 0.5 & 
++                         csc_ba4_mark$p_val_adj < 10^-200)
+
+EnhancedVolcano(csc_ba4_mark,
+    lab = rownames(csc_ba4_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. BA4",
+    subtitle = "",
+    selectLab = rownames(fil_genes),
+    boxedLabels = TRUE,
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    #labFace = 'bold',
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black')
+
+```
+
+```{r, fig.height = 6, fig.width= 6}
+#CSC vs CB
+
+csc_cb_mark <- FindMarkers(nad_ol, ident.1 = "CSC",
+                          ident.2 = "CB",
+                          only.pos = FALSE, 
+                          min.pct = 0.25)
+
+csc_cb_mark$pval_plot <- ifelse(csc_cb_mark$p_val_adj == 0, 
+                                paste(min(csc_cb_mark$p_val_adj[csc_cb_mark$p_val_adj >0]) * 
+                                        0.01),
+                                paste(csc_cb_mark$p_val_adj))
+
+csc_cb_mark$pval_plot<- as.numeric(paste(csc_cb_mark$pval_plot))
+
+
+EnhancedVolcano(csc_cb_mark,
+    lab = rownames(csc_cb_mark),
+    x = 'avg_log2FC',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "CSC vs. CB",
+    subtitle = "Oligodendroglia",
+    )
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "SKAP2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "GNA14", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "PLP1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "KCNMB4", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "ABCA2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "HAPLN2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "SCD", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "TF", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "CNP", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "EDIL3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "SLC44A1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+
+```{r}
+VlnPlot(nad_ol, feature = "PTPRJ", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "NCKAP5", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "DPP6", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "AC009063.2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "JAZF1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "PIEZO2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "PEX5L", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+```{r}
+VlnPlot(nad_ol, feature = "PREX2", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "GRIA4", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "LDLRAD3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "PTPRJ", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "LRRC7", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "CSMD1", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "LDLRAD3", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+```{r}
+VlnPlot(nad_ol, feature = "MSRA", group.by = "Tissue")+ 
+  scale_fill_manual(values=mycoloursP[24:40]) 
+
+
+```
+
+## Age
+
+```{r}
+
+mark_age_overall$old_log2 <- ifelse(mark_age_overall$cluster == "Old", 
+                           paste(mark_age_overall$avg_log2FC),
+                           paste(mark_age_overall$avg_log2FC * -1))
+
+mark_age_overall$old_log2 <- as.numeric(paste(mark_age_overall$old_log2))
+
+mark_age_overall$pval_plot <- ifelse(mark_age_overall$p_val_adj == 0, 
+                                paste(min(mark_age_overall$p_val_adj[mark_age_overall$p_val_adj >0]) * 
+                                        0.01),
+                                paste(mark_age_overall$p_val_adj))
+
+mark_age_overall$pval_plot<- as.numeric(paste(mark_age_overall$pval_plot))
+
+
+EnhancedVolcano(mark_age_overall,
+    lab = mark_age_overall$gene,
+    x = 'old_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Old vs. young",
+    subtitle = "Oligodendroglia")
+
+```
+
+
+
+
+```{r, fig.width=6, fig.height=6}
+
+
+mark_sex_overall$male_log2 <- ifelse(mark_sex_overall$cluster == "M", 
+                           paste(mark_sex_overall$avg_log2FC),
+                           paste(mark_sex_overall$avg_log2FC * -1))
+
+mark_sex_overall$male_log2 <- as.numeric(paste(mark_sex_overall$male_log2))
+
+mark_sex_overall$pval_plot <- ifelse(mark_sex_overall$p_val_adj == 0, 
+                                paste(min(mark_sex_overall$p_val_adj[mark_sex_overall$p_val_adj >0]) * 
+                                        0.01),
+                                paste(mark_sex_overall$p_val_adj))
+
+mark_sex_overall$pval_plot<- as.numeric(paste(mark_sex_overall$pval_plot))
+
+fil_genes <- subset(mark_sex_overall, abs(mark_sex_overall$avg_log2FC) > 0.5 & 
+                      mark_sex_overall$p_val_adj < 0.0001)
+
+fil_genes<- fil_genes$gene
+
+EnhancedVolcano(mark_sex_overall,
+    lab = mark_sex_overall$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs. female",
+    subtitle = "",
+    selectLab = fil_genes,
+    boxedLabels = TRUE,
+    pointSize = 4.0,
+    labSize = 6.0,
+    labCol = 'black',
+    #labFace = 'bold',
+    colAlpha = 4/5,
+    drawConnectors = TRUE,
+    widthConnectors = 1.0,
+    colConnectors = 'black')
+
+
+EnhancedVolcano(mark_sex_overall,
+    lab = mark_sex_overall$gene,
+    x = 'male_log2',
+    y = 'pval_plot',
+    FCcutoff = 0.5,
+    title = "Male vs female",
+    subtitle = "",
+    selectLab = fil_genes
+    #boxedLabels = TRUE,
+    #drawConnectors = TRUE,
+    #widthConnectors = 1.0,
+    #colConnectors = 'black'
+)
+
+
+```
+
+
+
+
+```{r}
+
+
+sessionInfo()
+
+
+```

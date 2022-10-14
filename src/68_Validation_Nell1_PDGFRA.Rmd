@@ -1,0 +1,231 @@
+---
+title: "Validation_NELL1_PDGFRA"
+author: "Luise A. Seeker"
+date: "03/08/2022"
+output: html_document
+---
+
+```{r}
+
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+library(here)
+library(tidyr)
+library(ggsci)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r}
+nell_data <- read.csv(here("data", 
+                   "validation_data", 
+                   "PDGFRA_NELL1_count_data.csv"))
+
+```
+
+
+```{r}
+names(nell_data)
+
+nell_data$tissue <- as.factor(nell_data$tissue)
+#nell_data$age_group <- as.factor(nell_data$age_group)
+#nell_data$sex <- as.factor(nell_data$sex)
+
+
+
+nell_data$sample_id <- paste(nell_data$donor, 
+                                 nell_data$tissue, 
+                                 sep = "_")
+
+
+```
+
+Convert from wide to long format to see how many single, double and triple
+positive cells are in each sample
+
+```{r}
+
+keycol <- "sample_id"
+valuecol <- "count"
+gathercols <- c("PDRFRA_C1",
+                "NELL1_C2", 
+                "PDGFRA_NELL1")
+
+long_data <- gather(nell_data, keycol, valuecol, gathercols)
+
+head(long_data)
+nrow(long_data)
+names(long_data)
+```
+
+
+
+
+
+
+```{r}
+
+long_data$sample_id <- factor(long_data$sample_id, levels =
+                                c("SD012_15_BA4", 
+                                  "SD021_17_BA4",
+                                  "SD042_18_BA4",
+                                  "SD001_07_CSC",
+                                  "SD004_12_CSC",
+                                  "SD037_14_CSC"
+                                  ))
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol, 
+                          colour = tissue)) +
+  geom_bar(position="stack", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_fill_manual(values= mycoloursP[25:30])
+
+
+
+
+
+ggplot(long_data, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[25:30])
+
+
+```
+
+```{r}
+opcs <- subset(long_data, long_data$keycol != "NELL1_C2") 
+
+ggplot(opcs, aes(x = sample_id , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +scale_fill_manual(values= mycoloursP[26:30])
+
+```
+
+```{r}
+
+nell_data$PDGFRA_NELL1 <- as.numeric(nell_data$PDGFRA_NELL1)
+nell_data$perc_Nell <- (nell_data$PDGFRA_NELL1/(nell_data$PDGFRA_NELL1 + 
+                                                 nell_data$PDRFRA_C1)) * 100
+
+ggplot(nell_data, aes(x = tissue, y = perc_Nell)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("NELL1+ PDGFRA+ (%)") + xlab("Tissue")
+
+
+ggplot(nell_data, aes(x = tissue, y = PDGFRA_NELL1)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("NELL1+ PDGFRA+") + xlab("Tissue")
+
+
+
+
+```
+Are Nell1 positive cells depending on tissue as well?
+
+```{r}
+ggplot(nell_data, aes(x = tissue, y = NELL1_C2)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("NELL1+") + xlab("Tissue")
+
+```
+Are PDGFRA positive cells depending on tissue as well?
+```{r}
+ggplot(nell_data, aes(x = tissue, y = PDRFRA_C1)) + geom_boxplot() + 
+  geom_jitter(width = 0.2, height = 0, aes(colour = sample_id)) +
+  theme_bw() + ylab("PDGFRA+") + xlab("Tissue")
+
+```
+
+
+
+
+```{r}
+
+
+mod_1 <- lmer(PDGFRA_NELL1 ~ 
+                tissue +
+                PDRFRA_C1+
+                (1 | sample_id), 
+               data = nell_data)
+summary(mod_1)
+
+
+```
+
+```{r}
+
+
+mod_2 <- lmer(PDGFRA_NELL1 ~ 
+                tissue +
+                (1 | sample_id), 
+               data = nell_data)
+summary(mod_2)
+
+
+```
+
+```{r}
+
+
+mod_lm <- lm(PDGFRA_NELL1 ~ 
+                tissue, 
+               data = nell_data)
+summary(mod_lm)
+anova(mod_lm)
+
+```
+
+```{r}
+
+
+long_data$staining <- "NELL1_PDGFRA"
+
+ggplot(long_data, aes(x = staining , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[16:30])
+
+nell1_subs_long <- subset(long_data, long_data$keycol != "NELL1_C2")
+
+ggplot(nell1_subs_long, aes(x = staining , 
+                          y = valuecol, 
+                          fill = keycol)) +
+  geom_bar(position="fill", stat="identity")+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_manual(values= mycoloursP[16:30])
+
+```
+
+
+
+Conclusion:
+In accordance to the snRNAseq data, NELL 1 is expressed in a proportion of BA4
+OPCs but while it is not being detected in CSC OPCs. There are not very many 
+cells expressing it though. 
+The question is what it does in OPCs and if there is a difference in brain OPCs
+that do express NELL1 and those that don't.
+
+NELL1 is also widely expressed in GM cells including neurons but it looks like
+GM OPCs are expressing it in the brain as well. Above only white matter areas 
+were quantified.
+
+```{r}
+sessionInfo()
+
+```

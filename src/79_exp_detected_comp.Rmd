@@ -1,0 +1,193 @@
+---
+title: "Glia expected vs detected proportions"
+author: "Luise A. Seeker"
+date: "08/09/2022"
+output: html_document
+---
+
+```{r}
+library(Seurat)
+library(ggsci)
+library(dplyr)
+library(here)
+library(ggplot2)
+library(RColorBrewer)
+library(gridExtra)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+```
+
+
+```{r, figheight = 4, fig.width=8}
+seur_comb <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+
+
+Idents(seur_comb) <- "Fine_cluster"
+seur_comb <-  RenameIdents(seur_comb,
+  "AS_1"= "Astrocytes",
+  "AS_10"=  "Astrocytes",
+  "AS_11"= "Astrocytes",
+  "AS_12"= "Astrocytes",
+  "AS_2"= "Astrocytes",
+  "AS_3"= "Astrocytes",
+  "AS_4"= "Astrocytes",
+  "AS_5"= "Astrocytes",
+  "AS_6"= "Astrocytes",
+  "AS_7"= "Astrocytes",
+  "AS_8"=  "Astrocytes",
+  "AS_9"= "Ependymal",
+  "BAM"= "BAM",
+  "COP_A"= "COP",
+  "COP_B"= "COP",
+  "COP_C"= "COP",
+  "EC_art_1"= "Vascular",
+  "EC_art_2"= "Vascular",
+  "EC_art_3"= "Vascular",
+  "EC_cap_1"= "Vascular",
+  "EC_cap_2"= "Vascular",
+  "EC_cap_3" = "Vascular",
+  "EC_cap_4" = "Vascular",
+  "EC_cap_5" = "Vascular",
+  "Ex_1" = "Neurons",
+  "Ex_2" = "Neurons",
+  "Ex_3" = "Neurons",
+  "Ex_4" = "Neurons",
+  "Immune" = "Immune",
+  "In_1" = "Neurons",
+  "In_2" = "Neurons",
+  "In_3" = "Neurons",
+  "In_4" = "Neurons",
+  "In_5" = "Neurons",
+  "In_6" = "Neurons",
+  "In_7" = "Neurons",
+  "In_8" = "Neurons",
+  "In_9" = "Neurons",
+  "Microglia_1" = "Microglia",
+  "Microglia_2" = "Microglia",
+  "Microglia_3" = "Microglia",
+  "Microglia_4" = "Microglia",
+  "Microglia_5" = "Microglia",
+  "Mural_cap_1" = "Vascular",
+  "Mural_cap_2" = "Vascular",
+  "Mural_vein_1" = "Vascular",
+  "Neur" = "Neurons",
+  "Oligo_A" = "Oligodendrocytes",
+  "Oligo_B" = "Oligodendrocytes",
+  "Oligo_C" = "Oligodendrocytes",
+  "Oligo_D" = "Oligodendrocytes",
+  "Oligo_E" = "Oligodendrocytes",
+  "Oligo_F" = "Oligodendrocytes",
+  "OPC_A" = "OPC",
+  "OPC_B" = "OPC",
+  "RELN_1" = "RELN",
+  "RELN_2" = "RELN",
+  "RELN_3" = "RELN",
+  "RELN_4" = "RELN",
+  "vSMC" = "Vascular")
+
+seur_comb$broad_cell_types<- Idents(seur_comb)
+
+pt <- table(Idents(seur_comb), seur_comb$orig.ident)
+pt <- as.data.frame(pt)
+pt$Var1 <- as.character(pt$Var1)
+
+p1 <- DimPlot(seur_comb, cols = c(mycoloursP[12],
+                            rep("grey", 6),
+                            mycoloursP[19:21],
+                            "grey"), label = TRUE) +NoLegend()
+
+ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = brewer.pal(12, "Paired")) +
+  theme(legend.title = element_blank())
+
+
+ggplot(pt, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = mycoloursP[12:40]) +
+  theme(legend.title = element_blank())
+
+pt_glia <- subset(pt, pt$Var1 %in% c("Astrocytes", 
+                                  "Oligodendrocytes", 
+                                  "Microglia",
+                                  "OPC"))
+
+pt_glia$Var2 <- "observed"
+ggplot(pt_glia, aes(x = Var2, y = Freq, fill = Var1)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c(mycoloursP[12],
+                               mycoloursP[19],
+                               mycoloursP[20],
+                               mycoloursP[21])) +
+  theme(legend.title = element_blank())
+
+
+exp_comp <- data.frame(cell_type= c("Oligodendrocytes", 
+                                    "Astrocytes", 
+                                    "OPC", 
+                                    "Microglia"),
+                       Var2 = "expected",
+                       Freq = c(60, 30, 5, 10))
+
+
+
+ggplot(exp_comp, aes(x = Var2, y = Freq, fill = cell_type)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Sample") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c(mycoloursP[12],
+                               mycoloursP[19],
+                               mycoloursP[20],
+                               mycoloursP[21])) +
+  theme(legend.title = element_blank())
+
+names(pt_glia)[1] <- c("cell_type")
+pt_glia$Var2 <- "observed"
+
+merged<- rbind(pt_glia, exp_comp)
+
+p2 <- ggplot(merged, aes(x = Var2, y = Freq, fill = cell_type)) +
+  theme_bw(base_size = 15) +
+  geom_col(position = "fill", width = 0.5) +
+  xlab("Mode") +
+  ylab("Proportion") +
+  scale_fill_manual(values = c(mycoloursP[12],
+                               mycoloursP[19],
+                               mycoloursP[20],
+                               mycoloursP[21])) +
+  theme(legend.title = element_blank())
+```
+
+
+```{r, fig.height=4, fig.width=10}
+grid.arrange(p1, p2, ncol=2)
+
+```
+
+```{r}
+sessionInfo()
+```

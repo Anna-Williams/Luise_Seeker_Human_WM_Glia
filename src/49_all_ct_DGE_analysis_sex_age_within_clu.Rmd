@@ -1,0 +1,475 @@
+---
+title: "DGE age & sex within clusters"
+author: "Luise A. Seeker"
+date: "16/04/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# Load libraries
+```{r}
+
+library(Seurat)
+library(here)
+library(ggsci)
+library(dplyr)
+```
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+
+```
+
+```{r}
+
+seur <- readRDS(here("data",
+                    "single_nuc_data",
+                    "all_cell_types",
+                    "srt_fine_anno_01.RDS"))
+```
+
+
+
+
+# Perform differential gene expression with age and sex separately for each cluster
+
+
+```{r}
+
+# create folder where to save data
+dir.create(here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "age"), 
+           recursive = TRUE)
+dir.create(here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "sex"))
+dir.create(here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "age_sex"))
+dir.create(here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "Tissue"))
+
+Idents(seur) <- "Fine_cluster"
+
+cluster_lev <- levels(as.factor(seur@meta.data$Fine_cluster))
+
+for(i in 1 : length(cluster_lev)){
+  clu_dat <- subset(seur, ident = cluster_lev[i])
+  #Age
+  Idents(clu_dat) <- "AgeGroup"
+  mark_age <- FindAllMarkers(clu_dat, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+  save_name_age <- paste(cluster_lev[i], "age_mark.csv", sep = "_")
+  write.csv(mark_age, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "age", 
+                           save_name_age))
+  # Sex
+  Idents(clu_dat) <- "gender"
+  mark_sex <- FindAllMarkers(clu_dat, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+  save_name_sex <- paste(cluster_lev[i], "sex_mark.csv", sep = "_")
+  write.csv(mark_sex, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "sex", 
+                           save_name_sex))
+  # Age * sex
+  Idents(clu_dat) <- "ageSex"
+  mark_age_sex <- FindAllMarkers(clu_dat, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+  save_name_age_sex <- paste(cluster_lev[i], "age_sex_mark.csv", sep = "_")
+  write.csv(mark_age_sex, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", 
+                               "age_sex", save_name_age_sex))
+  
+  
+  # Tissue
+  Idents(clu_dat) <- "Tissue"
+  mark_age_tissue <- FindAllMarkers(clu_dat, 
+                         only.pos = TRUE, 
+                         min.pct = 0.25, 
+                         logfc.threshold = 0.25, 
+                         test.use = "MAST")
+  save_name_age_tissue <- paste(cluster_lev[i], "tissue_mark.csv", sep = "_")
+  write.csv(mark_age_tissue, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", 
+                               "Tissue", save_name_age_tissue))
+  
+  
+  
+}
+
+
+
+```
+
+
+
+Read in data for plotting differentially expressed genes
+```{r}
+# define function
+gen_mark_list <-function(file_dir = getwd(),
+                         avg_log = 1.2,
+                         pct_1 = 0.25,
+                         pct_2 = 0.6,
+                         pairwise = FALSE,
+                         top_genes = 10
+                         ){
+  temp = list.files(path = file_dir,
+                    pattern="*.csv",
+                    full.names = TRUE)
+  myfiles = lapply(temp, function(k){read.csv(k, 
+                                              sep = ",",
+                                              quote = "\"",blank=FALSE )})
+  
+ 
+  
+  for(i in 1:length(myfiles)){
+    dat <- myfiles[[i]]
+    if(nrow(dat) > 0){
+        av_log_fil <- subset(dat, dat$avg_log2FC > avg_log & 
+                           dat$pct.1 > pct_1 & 
+                           dat$pct.2 < pct_2)
+        if(pairwise == TRUE){
+          
+          top10 <- av_log_fil %>% top_n(top_genes, avg_log2FC)
+          top10$gene <- top10$X
+          ol_clu <- strsplit(temp[i], "_mark.")[[1]][1]
+          top10$clu <- ol_clu
+        }else{
+          av_log_fil$cluster <- as.character(av_log_fil$cluster)
+          top10 <- av_log_fil %>% group_by(cluster) %>% 
+          top_n(top_genes, avg_log2FC)
+          ol_clu <- strsplit(temp[i], "/")[[1]][13]
+          ol_clu <- strsplit(ol_clu, "_age_")[[1]][1]
+          top10$clu <- ol_clu
+        }
+        
+        if(i ==1){
+          fil_genes <- top10
+        }else{
+          fil_genes <- rbind(fil_genes, top10)
+        }
+        
+        fil_genes <- fil_genes[!duplicated(fil_genes$gene),]
+        
+        }
+  }
+  
+  return(fil_genes)
+    
+}
+
+
+# use function
+fil_genes_age <- gen_mark_list(file_dir = here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "age"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           top_genes = 50)
+
+fil_genes_sex <- gen_mark_list(file_dir = here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "sex"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           top_genes = 50)
+
+
+fil_genes_age_sex <- gen_mark_list(file_dir = here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "age_sex"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           top_genes = 50)
+
+fil_genes_tissue <- gen_mark_list(file_dir = here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "Tissue"),
+                           avg_log = 0.8,
+                           pct_1 = 0.25,
+                           pct_2 = 0.6,
+                           top_genes = 2)
+
+write.csv(fil_genes_age, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "top_50_DGE_age.csv") )
+write.csv(fil_genes_sex, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "top_50_DGE_sex.csv") )
+write.csv(fil_genes_age_sex, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "top_50_DGE_age_sex.csv") )
+write.csv(fil_genes_tissue, here("outs", "all_ct_DGE_age_sex_tissue", "within_cluster", "top_50_DGE_tissue.csv") )
+
+fil_genes <- rbind(fil_genes_age, fil_genes_age_sex, fil_genes_sex)
+
+
+# a lot of the differentially expressed genes are in COPS. However, their numbers 
+# are so small that those results are more affected by measurement error. I 
+# therefore decided to remove those genes from the list of possibly interesting 
+# conditions for now. Larger numbers of COPS are required to look for 
+# age, sex and regional differences. 
+
+
+#COP_list <- c("COP_A_age",
+#              "COP_A_age_sex",
+#              "COP_A_sex",
+#              "COP_B_age",
+#              "COP_B_age_sex",
+#              "COP_B_sex",
+#              "COP_C_age",
+#              "COP_C_age_sex",
+#              "COP_C_sex")
+#
+
+#fil_genes <- subset(fil_genes, !fil_genes$ol_clu %in% COP_list )
+
+```
+
+I do have those lists now and have to see how to make sense of them.
+```{r}
+
+int_genes <- unique(fil_genes$gene)
+
+
+```
+
+```{r}
+seur@meta.data$fine_clu_age_sex <- paste(seur@meta.data$Fine_cluster, 
+                                         seur@meta.data$ageSex, 
+                                         sep = "_")
+
+seur@meta.data$fine_clu_age <- paste(seur@meta.data$Fine_cluster, 
+                                         seur@meta.data$AgeGroup, 
+                                         sep = "_")
+
+seur@meta.data$fine_clu_sex <- paste(seur@meta.data$Fine_cluster, 
+                                         seur@meta.data$gender, 
+                                         sep = "_")
+
+
+```
+
+```{r, fig.width = 6, fig.height = 15}
+
+Idents(seur) <- "fine_clu_age_sex"
+
+cluster_averages <- AverageExpression(seur, group.by = "fine_clu_age_sex",
+                                      return.seurat = TRUE)
+
+cluster_averages@meta.data$clu_age_sex_gr <- levels(as.factor(seur@meta.data$fine_clu_age_sex)) 
+                                             
+
+hm_av <- DoHeatmap(object = cluster_averages, 
+          features = fil_genes_tissue$gene, #int_genes, 
+          label = TRUE,
+          group.by = "clu_age_sex_gr",
+          group.colors = mycoloursP[6:40],
+          draw.lines = F)
+
+hm_av
+```
+
+
+```{r, fig.width = 8, fig.height=11}
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis"))
+
+#pdf("/Users/lseeker/Documents/Work/HumanCellAtlas/2021_oligos_out/DE_genes_vis/Res_0_3_av_hm.pdf", 
+#    paper="a4", width=8, height=11.5)
+print(hm_av)
+
+#dev.off()
+```
+
+
+```{r, fig.width=15, fig.height = 5}
+
+DoHeatmap(object = seur, features = int_genes, 
+          label = TRUE, 
+          group.by = 'ageSex')
+```
+
+
+```{r, fig.width=20, fig.height = 4}
+
+
+Idents(seur) <- "Fine_cluster"
+
+DotPlot(seur, group.by = "ageSex", features = int_genes) + RotatedAxis()
+
+```
+
+
+# save VlnPlots
+
+
+```{r}
+
+
+save_vln_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 10,
+                           plotheight = 20,
+                           plotwidth = 8,
+                           group_by = Idents(seur_obj),
+                           split_by = NULL,
+                           pt_size = 0.1,
+                           n_col = 1){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+        
+          pdf(paste(save_dir, "/clust_marker_vln_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          finalPlot<-VlnPlot(seur_obj, features = unlist(gene_groups[i]),
+                             group.by = group_by, split.by = split_by,
+                             pt.size= pt_size, ncol=1)
+          print(finalPlot)
+          graphics.off()
+          
+        }
+      }
+      
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "dots"), 
+           recursive = TRUE)    
+
+save_vln_plots(seur_obj= seur, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "dots"),
+               split_by = "ageSex",
+               group_by = "Fine_cluster")
+
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", "no_dots"))
+save_vln_plots(seur_obj= seur, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "vln", "no_dots"),
+               split_by = "ageSex",
+               group_by = "Fine_cluster",
+               pt_size = 0,
+               plotheight = 30)
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "vln", 
+                "all_cell_types"))
+
+save_vln_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "vln", "all_cell_types"),
+               split_by = "ageSex",
+               group_by = "clusters_named",
+               pt_size = 0,
+               plotheight = 30)
+               
+               
+
+```
+
+
+# save FeaturePlots
+
+
+```{r}
+
+save_feat_plots <- function(seur_obj,
+                           marker_list,
+                           save_dir = getwd(),
+                           numb_genes = 16,
+                           plotheight = 18,
+                           plotwidth = 20,
+                           split_by = "NULL",
+                           n_col = 4){
+  gene_groups <- split(marker_list, 
+                       ceiling(seq_along(marker_list) / numb_genes))
+    
+    for(i in 1:length(gene_groups)){
+      if(split_by != "NULL"){
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col, split.by = split_by)
+      }else{
+        feature_plot<-FeaturePlot(seur_obj, 
+                                    features = unlist(gene_groups[i]),
+                                    ncol = n_col)
+      }
+        
+          pdf(paste(save_dir, "/clust_marker_feat_", i, ".pdf", sep=""), 
+              height=plotheight, width = plotwidth)
+          
+          print(feature_plot)
+          
+          graphics.off()
+          
+        }
+}
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_ol"))
+      
+     
+save_feat_plots(seur_obj= seur, 
+               marker_list = int_genes,
+               split_by = "ageSex",
+               numb_genes = 10,
+               plotheight = 30,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_ol"))
+
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "feature_pl_all_cell_types"))
+
+save_feat_plots(seur_obj= seur_comb, 
+               marker_list = int_genes,
+               split_by = "ageSex",
+               numb_genes = 10,
+               plotheight = 30,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis",
+                               "feature_pl_all_cell_types"))
+               
+               
+
+```
+
+```{r}
+
+y_linked <- c("ASMTY", "TSPY", "IL3RAY", "SRY", "TDF", "ZFY",
+              "PRKY", "AMGL", "ANT3Y", "AZF2", "BPY2", "AZF1",
+              "DAZ", "RBM1", "RBM2", "UTY", "USP9Y", "AMELY")
+
+fil_y_bool<- y_linked %in% rownames(seur)
+
+fil_y_linked <- y_linked[fil_y_bool]
+# "PRKY is not expressed and causes problems in the FeaturePlots
+# (but nor Vln Plot)
+
+fil_y_linked <- fil_y_linked[c(1, 3, 4)]
+
+dir.create(here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", "y_linked"))
+      
+     
+save_feat_plots(seur_obj= seur, 
+               marker_list = fil_y_linked,
+               split_by = "ageSex",
+               numb_genes = length(fil_y_linked),
+               plotheight = 9,
+               save_dir = here("outs", "DGE_age_sex", "DE_age_sex_genes_vis", 
+                               "y_linked"))
+
+
+
+```
+
+
+
+
+```{r}
+
+
+sessionInfo()
+
+
+```

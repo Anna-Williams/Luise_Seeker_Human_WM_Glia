@@ -1,0 +1,417 @@
+---
+title: "Nadine nad_ol"
+author: "Luise A. Seeker"
+date: "26/02/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+    toc_depth: 4
+    theme: united
+---
+
+# Introduction
+
+The purpose of this script is to find variable genes, cluster the oligodendroglia
+dataset at different resolutions, find some rough markers for cluster
+stability/ purity that may help to decide which clusters to use, and find 
+marker genes for those clusters. 
+
+It is a long and repetitive script that could be written more elegantly, but
+this work is very explorative, manual and depending on assessment of visual 
+output. Making it prettier now that I know the resolutiions I would like to test
+tempts me, but does not bring me further in the analysis. So therefore I decided
+to keep the script for now as it is. 
+
+
+
+
+# Load libraries
+
+```{r, echo = F}
+# general
+library(here)
+library(tibble)
+library(dplyr)
+
+
+# plotting
+library(ggplot2)
+library(ggdendro)
+library(ggsci)
+library(gridExtra)
+library(viridis) 
+library(scales)
+library(pheatmap)
+library(dendextend)
+
+# stats
+library(NMF)
+library(limma)
+library(StatMeasures)
+
+# other
+library(zoo)
+library(philentropy)
+library(bluster)
+
+# sc Analysis
+library(scran)
+library(scater)
+library(SingleCellExperiment)
+library(EnhancedVolcano)
+library(Seurat)
+library(clustree)
+
+#For monocle pseudotime:
+library(monocle3)
+library(SeuratWrappers)
+
+
+
+
+
+```
+
+
+# Pick colour pallets
+
+```{r, echo = F}
+mypal <- pal_npg("nrc", alpha = 0.7)(10)
+mypal2 <-pal_tron("legacy", alpha = 0.7)(7)
+mypal3 <- pal_lancet("lanonc", alpha = 0.7)(9)
+mypal4 <- pal_simpsons(palette = c("springfield"), alpha = 0.7)(16)
+mypal5 <- pal_rickandmorty(palette = c("schwifty"), alpha = 0.7)(6)
+mypal6 <- pal_futurama(palette = c("planetexpress"), alpha = 0.7)(5)
+mypal7 <- pal_startrek(palette = c("uniform"), alpha = 0.7)(5)
+
+mycoloursP<- c(mypal, mypal2, mypal3, mypal4, mypal5, mypal6, mypal7)
+
+show_col(mycoloursP, labels =F)
+```
+
+
+# Read in dataset
+
+```{r, echo = F}
+
+nad_ol <- readRDS("/Users/lseeker/Documents/Work/HumanCellAtlas/srt_oligos_Nadine/srt_oligos_and_opcs_LS.RDS")
+
+```
+
+
+
+# Non-linear dimensional reduction
+```{r}
+
+
+FeaturePlot(nad_ol, features = "PAX3")
+FeaturePlot(nad_ol, features = "PLP1")
+FeaturePlot(nad_ol, features = "MAG")
+FeaturePlot(nad_ol, features = "MOG")
+FeaturePlot(nad_ol, features = "MBP")
+FeaturePlot(nad_ol, features = "OPALIN")
+FeaturePlot(nad_ol, features = "SPARC")
+FeaturePlot(nad_ol, features = "SPARCL1")
+FeaturePlot(nad_ol, features = "PCDH15")
+FeaturePlot(nad_ol, features = "PDGFRA")
+FeaturePlot(nad_ol, features = "nCount_RNA")
+FeaturePlot(nad_ol, features = "nFeature_RNA")
+
+```
+
+
+
+
+
+# Test for batch effect etc
+
+```{r, fig.width = 10, fig.height = 8}
+
+DimPlot(nad_ol, 
+        reduction = "umap", 
+        cols= mycoloursP[6:40], 
+        group.by = "Tissue",
+        split.by = "caseNO", 
+        pt.size = 0.8, 
+        ncol = 5)
+```
+
+```{r, fig.width = 10, fig.height = 8}
+
+DimPlot(nad_ol, 
+        reduction = "umap", 
+        cols= mycoloursP[6:40], 
+        split.by = "uniq_id", 
+        group.by = "Tissue", 
+        pt.size = 0.8, 
+        ncol = 5)
+```
+
+
+# Test different clustering resolutions
+## 0.5
+
+```{r}
+
+DimPlot(nad_ol, reduction = "umap", 
+        cols= mycoloursP, 
+        group.by = "RNA_snn_res.0.5",
+        label = TRUE)
+
+```
+
+# Cerebellum separately
+```{r}
+
+Idents(nad_ol) <- "Tissue"
+cb_srt <- subset(nad_ol, idents = "CB")
+cb_srt <- FindVariableFeatures(cb_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes_cb_srt <- rownames(cb_srt)
+cb_srt <- ScaleData(cb_srt, features= all_genes_cb_srt)
+cb_srt <- RunPCA(cb_srt, features = VariableFeatures(object = cb_srt))
+cb_srt <- FindNeighbors(cb_srt, dims = 1:10)
+cb_srt <- FindClusters(cb_srt, resolution = 0.5)
+cb_srt <- RunUMAP(cb_srt, dims = 1:10)
+DimPlot(cb_srt, reduction = "umap", cols= mycoloursP[4:40])
+
+```
+
+
+```{r}
+FeaturePlot(cb_srt, features = "OPALIN")
+
+```
+
+```{r}
+FeaturePlot(cb_srt, features = "SPARC")
+
+```
+
+# Cervical spinal cord separately
+```{r}
+
+Idents(nad_ol) <- "Tissue"
+csc_srt <- subset(nad_ol, idents = "CSC")
+csc_srt <- FindVariableFeatures(csc_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes_csc_srt <- rownames(csc_srt)
+csc_srt <- ScaleData(csc_srt, features= all_genes_csc_srt)
+csc_srt <- RunPCA(csc_srt, features = VariableFeatures(object = csc_srt))
+csc_srt <- FindNeighbors(csc_srt, dims = 1:7)
+csc_srt <- FindClusters(csc_srt, resolution = 0.7)
+csc_srt <- RunUMAP(csc_srt, dims = 1:7)
+DimPlot(csc_srt, reduction = "umap", cols= mycoloursP[4:40], label = TRUE)
+
+```
+
+
+
+
+
+```{r}
+FeaturePlot(csc_srt, features = "RBFOX1")
+
+```
+
+
+```{r}
+FeaturePlot(csc_srt, features = "SPARC")
+
+```
+
+
+```{r}
+FeaturePlot(csc_srt, features = "OPALIN")
+
+```
+
+
+```{r}
+FeaturePlot(csc_srt, features = "PLP1")
+
+```
+
+
+```{r}
+FeaturePlot(csc_srt, features = "PDGFRA")
+
+```
+
+
+```{r}
+FeaturePlot(csc_srt, features = "SPARCL1")
+
+```
+```{r}
+FeaturePlot(csc_srt, features = "KLK6")
+
+```
+
+
+# BA4 spinal cord separately
+```{r}
+
+Idents(nad_ol) <- "Tissue"
+ba4_srt <- subset(nad_ol, idents = "BA4")
+ba4_srt <- FindVariableFeatures(ba4_srt, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes_ba4_srt <- rownames(ba4_srt)
+ba4_srt <- ScaleData(ba4_srt, features= all_genes_ba4_srt)
+ba4_srt <- RunPCA(ba4_srt, features = VariableFeatures(object = ba4_srt))
+ba4_srt <- FindNeighbors(ba4_srt, dims = 1:10)
+ba4_srt <- FindClusters(ba4_srt, resolution = 0.5)
+ba4_srt <- RunUMAP(ba4_srt, dims = 1:10)
+DimPlot(ba4_srt, reduction = "umap", cols= mycoloursP[4:40])
+
+
+```
+
+```{r}
+
+DimPlot(ba4_srt, reduction = "umap", cols= mycoloursP[4:40],
+        group.by = "caseNO")
+
+
+```
+
+```{r}
+
+DimPlot(ba4_srt, reduction = "umap", cols= mycoloursP[4:40],
+        group.by = "caseNO", split.by = "caseNO", ncol = 4)
+
+```
+
+```{r}
+clu_mark <- FindMarkers(ba4_srt, ident.1 = 6, ident.2 = c(1,2,3,4,5,7), only.pos = TRUE)
+clu_mark
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "AL139260.1")
+
+```
+
+```{r}
+
+FeaturePlot(ba4_srt, features = "ABHD3")
+
+```
+
+```{r}
+
+FeaturePlot(ba4_srt, features = "SNAP25")
+
+```
+
+```{r}
+
+FeaturePlot(ba4_srt, features = "RBFOX3")
+
+```
+
+```{r}
+
+FeaturePlot(ba4_srt, features = "DNAJB1")
+FeaturePlot(ba4_srt, features = "BACH2")
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "FOS")
+
+```
+
+```{r}
+FeaturePlot(ba4_srt, features = "FOS")
+
+```
+
+```{r}
+FeaturePlot(ba4_srt, features = "OPALIN")
+
+```
+
+```{r}
+FeaturePlot(ba4_srt, features = "SPARC")
+
+```
+
+```{r}
+FeaturePlot(ba4_srt, features = "SPARCL1")
+
+```
+```{r}
+FeaturePlot(ba4_srt, features = "RBFOX1")
+
+```
+
+```{r}
+FeaturePlot(ba4_srt, features = "GFAP")
+
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "PLP1")
+
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "PLP1")
+
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "PDGFRA")
+
+```
+
+
+```{r}
+FeaturePlot(ba4_srt, features = "MAG")
+
+```
+```{r}
+FeaturePlot(ba4_srt, features = "KLK6")
+
+```
+
+```{r}
+merge_ol <- merge(csc_srt, y = c(cb_srt, ba4_srt), add.cell.ids = c("csc", "cb", "ba4"))
+
+merge_ol <- FindVariableFeatures(merge_ol, 
+                               selection.method = "vst", 
+                               nfeatures = 2000)
+all_genes_merge_ol <- rownames(merge_ol)
+merge_ol <- ScaleData(merge_ol, features= all_genes_merge_ol)
+merge_ol <- RunPCA(merge_ol, features = VariableFeatures(object = merge_ol))
+merge_ol <- FindNeighbors(merge_ol, dims = 1:10)
+merge_ol <- FindClusters(merge_ol, resolution = 0.5)
+merge_ol <- RunUMAP(merge_ol, dims = 1:10)
+DimPlot(merge_ol, reduction = "umap", cols= mycoloursP[4:40])
+
+FeaturePlot(merge_ol, features = "OPALIN")
+FeaturePlot(merge_ol, features = "RBFOX1")
+FeaturePlot(merge_ol, features = "SPARC")
+FeaturePlot(merge_ol, features = "SPARCL1")
+FeaturePlot(merge_ol, features = "NELL1")
+FeaturePlot(merge_ol, features = "PAX3")
+
+```
+
+
+
+
+
+
+
+`
